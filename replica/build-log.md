@@ -28,6 +28,7 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
 | 2026-10-25 | Tu piano (ajustes) | hecho | 25 a 88 teclas, nota más grave ajustable por octavas, y qué hacer con lo que no cabe: omitirlo o plegarlo a la octava más cercana. El detalle de la canción dice cuántas notas se movieron. |
 | 2026-10-25 | Tono por octavas | hecho | ±24 semitonos con botones de octava y de semitono, explicado en palabras, recordado por canción. |
 | 2026-10-25 | S04 Enlaces de streaming | **parcial, a propósito** | Reconoce YouTube, Spotify y SoundCloud, lee el título por su oEmbed público y lleva a los dos caminos que sí funcionan. La conversión directa desde el enlace no se puede hacer sin servidor; está dicho en la propia pantalla. |
+| 2026-10-25 | Audio sin límites | hecho | Fuera el tope de 25 MB y el de 6 minutos. Para que "sin límite" sea verdad y no una promesa, el audio se decodifica ya a 16 kHz: una canción de diez minutos pasa de ocupar más de 200 MB a unos 38, que es lo que separa funcionar de tumbar la pestaña en un iPad. Se aceptan mp3, m4a, wav, ogg y flac, y varios archivos de golpe. |
 | 2026-10-25 | Escuchar y transcribir | hecho | Grabación por micrófono (o del sonido de otra pestaña donde el navegador lo permita) y transcripción con tempo detectado solo. |
 
 ## Lo que costó más de lo que parecía
@@ -58,6 +59,19 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
   servicio (sin clave, sin cuenta), ofrecer la búsqueda de un MIDI —que es lo exacto— y
   grabar la canción mientras suena para sacarla de oído. De un enlace pegado a algo que
   tocar hay dos toques.
+
+## Quitar un límite es trabajo, no borrar una línea
+
+Quitar el `if (file.size > 25 MB)` habría durado un segundo y habría cambiado un mensaje de
+error por una pestaña muerta. Lo que de verdad costaba era el consumo: `decodeAudioData`
+deja el archivo entero en memoria como float, y diez minutos en estéreo a 44,1 kHz son más
+de 200 MB. La salida fue pedirle al navegador que decodifique **directamente a 16 kHz** con
+un `OfflineAudioContext` —que es todo lo que necesita el detector de tono— y quedarse en
+unos 38 MB. La grabación hace lo mismo mientras graba, remuestreando sobre la marcha y
+arrastrando el resto entre trozos para que la junta no se oiga.
+
+Lo que sigue creciendo con la duración es el tiempo: unos 12 segundos de análisis por cada
+minuto de audio. Eso no se esconde, se dice antes de empezar y se ve en la barra.
 
 ## Lo que se dejó fuera, y por qué
 

@@ -6,7 +6,7 @@ import { CATALOG, applyWrittenFingers } from './songs.js';
 import { engine, TIMBRE_NAMES } from './audio.js';
 import { songFromMidi, songToMidiBytes, MidiInput, estimateDifficulty } from './midi.js';
 import { MicInput } from './mic.js';
-import { transcribeFile, transcribeBuffer, AudioCapture } from './transcribe.js';
+import { transcribeFile, transcribeSamples, AudioCapture, estimateWork } from './transcribe.js';
 import { buildLayout, wholeOctaves, drawKeyboard, attachPointerInput, computerKeyToMidi } from './keyboard.js';
 import { drawRoll, keyboardMarks, barHeatmap } from './roll.js';
 import { Player, MODES } from './player.js';
@@ -972,7 +972,7 @@ function importProgress(ratio) {
   $('#import-progress-fill').style.width = pct(ratio);
 }
 
-async function addSongFromBuffer(buffer, filename) {
+async function addSongFromBuffer(buffer, filename, { reveal = true } = {}) {
   const lower = (filename || '').toLowerCase();
   const status = $('#import-status');
   const isMidi = lower.endsWith('.mid') || lower.endsWith('.midi') || looksLikeMidi(buffer);
@@ -992,19 +992,21 @@ async function addSongFromBuffer(buffer, filename) {
     status.textContent = 'Leyendo el MIDI…';
     song = songFromMidi(buffer, filename ? filename.replace(/\.[^.]+$/, '') : 'Canción importada');
   } else {
-    status.textContent = 'Escuchando el audio y buscando la melodía… esto tarda un rato.';
+    status.textContent = 'Leyendo el audio y buscando la melodía. En canciones largas tarda; no cierres esta pantalla.';
     const result = await transcribeFile(buffer, engine, {
       bpm: transcribeBpm(), quantize: transcribeGrid(), onProgress: importProgress,
     });
-    await saveTranscription(result, filename ? filename.replace(/\.[^.]+$/, '') : 'Transcripción');
+    await saveTranscription(result, filename ? filename.replace(/\.[^.]+$/, '') : 'Transcripción', { reveal });
     return;
   }
 
   await store.saveSong(song);
   await loadSongs();
   renderLibrary();
-  closeAddSheet();
-  openSong(song.id);
+  if (reveal) {
+    closeAddSheet();
+    openSong(song.id);
+  }
   if (isMidi) toast(`"${song.title}" añadida.`, 'good');
 }
 
@@ -1016,13 +1018,17 @@ function looksLikeMidi(buffer) {
 async function handleFiles(files) {
   const status = $('#import-status');
   for (const file of files) {
-    if (file.size > 25 * 1024 * 1024) {
-      status.textContent = `${file.name} pesa demasiado (más de 25 MB).`;
-      continue;
+    // Sin tope de tamaño: el audio se decodifica ya a 16 kHz, así que una
+    // canción larga tarda más pero cabe. Lo único honesto es avisar del rato.
+    const big = file.size > 8 * 1024 * 1024;
+    if (big) {
+      status.textContent = `${file.name} son ${Math.round(file.size / 1048576)} MB. `
+        + 'Va a tardar un rato: deja esta pantalla abierta.';
     }
     try {
       const buffer = await file.arrayBuffer();
-      await addSongFromBuffer(buffer, file.name);
+      // Solo la última abre su pantalla: si no, importar varias salta de una a otra.
+      await addSongFromBuffer(buffer, file.name, { reveal: file === files[files.length - 1] });
     } catch (e) {
       status.textContent = e.message;
       toast(e.message, 'bad');
@@ -1185,17 +1191,18 @@ function cancelCapture() {
 async function finishCapture() {
   if (!capture) return;
   clearInterval(captureTimer);
-  const buffer = capture.stop();
+  const recording = capture.stop();
   capture = null;
   $('#capture-panel').hidden = true;
   const status = $('#import-status');
-  if (!buffer || buffer.duration < 2) {
+  if (!recording || recording.duration < 2) {
     status.textContent = 'Se grabó muy poco. Dale al play antes de empezar a grabar.';
     return;
   }
-  status.textContent = `Grabados ${fmtTime(buffer.duration * 1000)}. Buscando las notas…`;
+  status.textContent = `Grabados ${fmtTime(recording.duration * 1000)}. `
+    + `Buscando las notas: unos ${estimateWork(recording.duration)} segundos.`;
   try {
-    const result = await transcribeBuffer(buffer, {
+    const result = await transcribeSamples(recording.samples, recording.rate, recording.duration, {
       bpm: transcribeBpm(),
       quantize: transcribeGrid(),
       onProgress: importProgress,
@@ -1225,7 +1232,7 @@ function transcribeGrid() {
 }
 
 /** Guarda lo transcrito y lo abre, para que se pueda tocar enseguida. */
-async function saveTranscription(result, title) {
+async function saveTranscription(result, title, { reveal = true } = {}) {
   const song = buildSong({
     title: String(title).slice(0, 80),
     source: 'audio',
@@ -1237,9 +1244,11 @@ async function saveTranscription(result, title) {
   await store.saveSong(song);
   await loadSongs();
   renderLibrary();
-  hideRoutes();
-  closeAddSheet();
-  openSong(song.id);
+  if (reveal) {
+    hideRoutes();
+    closeAddSheet();
+    openSong(song.id);
+  }
   const tempo = result.detectedBpm
     ? `tempo detectado ${result.detectedBpm} bpm`
     : `tempo ${result.bpm} bpm`;

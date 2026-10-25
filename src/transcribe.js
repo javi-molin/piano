@@ -115,11 +115,24 @@ function freqToMidi(freq) {
  * options: { bpm, quantize (en beats, 0 = sin cuantizar), onProgress }
  */
 export async function transcribeBuffer(audioBuffer, options = {}) {
+  const mono = resample(toMono(audioBuffer), audioBuffer.sampleRate, TARGET_RATE);
+  return transcribeSamples(mono, TARGET_RATE, audioBuffer.duration, options);
+}
+
+/**
+ * El análisis de verdad, sobre muestras mono ya a TARGET_RATE.
+ *
+ * Sin tope de duración: el trabajo crece en línea recta con el audio y entre
+ * tramo y tramo se le devuelve el turno al navegador, así que un archivo largo
+ * tarda más pero no congela nada ni se queda sin memoria.
+ */
+export async function transcribeSamples(mono, rate, duration, options = {}) {
   const quantize = options.quantize != null ? options.quantize : 0.25;
   const onProgress = options.onProgress || (() => {});
-
-  const mono = resample(toMono(audioBuffer), audioBuffer.sampleRate, TARGET_RATE);
   const frames = Math.max(0, Math.floor((mono.length - FRAME) / HOP));
+  // En audio largo conviene ceder el turno menos veces: cada pausa cuesta unos
+  // milisegundos y con decenas de miles de tramos eso se nota.
+  const yieldEvery = frames > 20000 ? 512 : 64;
   const pitches = new Float32Array(frames);
   const energies = new Float32Array(frames);
   let peakEnergy = 1e-9;
@@ -133,10 +146,10 @@ export async function transcribeBuffer(audioBuffer, options = {}) {
     energies[f] = rms;
     if (rms > peakEnergy) peakEnergy = rms;
     if (rms > 0.004) {
-      const [freq, confidence] = yin(frame, TARGET_RATE);
+      const [freq, confidence] = yin(frame, rate);
       pitches[f] = confidence > 0.55 && freq > F0_MIN && freq < F0_MAX ? freqToMidi(freq) : 0;
     }
-    if ((f & 63) === 0) {
+    if (f % yieldEvery === 0) {
       onProgress(f / Math.max(1, frames));
       await new Promise((r) => setTimeout(r, 0)); // deja respirar a la interfaz
     }
@@ -155,7 +168,7 @@ export async function transcribeBuffer(audioBuffer, options = {}) {
   }
 
   // Segmentación: una nota es un tramo con la misma altura redondeada.
-  const secondsPerFrame = HOP / TARGET_RATE;
+  const secondsPerFrame = HOP / rate;
   const energyGate = Math.max(0.006, peakEnergy * 0.08);
   const segments = [];
   let current = null;
@@ -209,7 +222,7 @@ export async function transcribeBuffer(audioBuffer, options = {}) {
   if (low > notes.length * 0.25) for (const n of notes) if (n.midi < 55) n.hand = 'L';
 
   onProgress(1);
-  return { notes, bpm, detectedBpm, frames, seconds: audioBuffer.duration };
+  return { notes, bpm, detectedBpm, frames, seconds: duration };
 }
 
 /**
@@ -265,10 +278,11 @@ export class AudioCapture {
     this.stream = null;
     this.node = null;
     this.chunks = [];
+    this.leftover = new Float32Array(0);
     this.frames = 0;
     this.startedAt = 0;
     this.onLevel = null;
-    this.maxSeconds = 300;
+    this.maxSeconds = 3600;
     this.onAuto = null;
   }
 
@@ -283,7 +297,7 @@ export class AudioCapture {
   get recording() { return !!this.stream; }
 
   get seconds() {
-    return this.sampleRate ? this.frames / this.sampleRate : 0;
+    return this.frames / TARGET_RATE;
   }
 
   async start(source = 'mic') {
@@ -306,7 +320,10 @@ export class AudioCapture {
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: { ...quality, channelCount: 1 } });
     }
 
-    this.sampleRate = ctx.sampleRate;
+    this.inputRate = ctx.sampleRate;
+    this.ratio = this.inputRate / TARGET_RATE;
+    this.position = 0;
+    this.leftover = new Float32Array(0);
     this.chunks = [];
     this.frames = 0;
     this.startedAt = Date.now();
@@ -319,8 +336,7 @@ export class AudioCapture {
     sink.gain.value = 0; // conectado al destino para que corra, en silencio para no acoplar
     this.node.onaudioprocess = (event) => {
       const data = event.inputBuffer.getChannelData(0);
-      this.chunks.push(new Float32Array(data));
-      this.frames += data.length;
+      this.consume(data);
       if (this.onLevel) {
         let peak = 0;
         for (let i = 0; i < data.length; i += 8) peak = Math.max(peak, Math.abs(data[i]));
@@ -340,22 +356,53 @@ export class AudioCapture {
     return true;
   }
 
-  /** Corta la grabación y devuelve lo grabado como AudioBuffer. */
+  /**
+   * Guarda el trozo que acaba de llegar, ya rebajado a 16 kHz.
+   *
+   * Grabar al ritmo del sistema gastaría tres veces más memoria para nada: el
+   * detector de tono no mira por encima de los 16 kHz. Se arrastra el resto
+   * entre llamadas para que la junta entre trozos no se note.
+   */
+  consume(data) {
+    const input = this.leftover.length
+      ? (() => {
+        const joined = new Float32Array(this.leftover.length + data.length);
+        joined.set(this.leftover, 0);
+        joined.set(data, this.leftover.length);
+        return joined;
+      })()
+      : data;
+
+    const out = [];
+    let position = this.position;
+    while (position + 1 < input.length) {
+      const index = Math.floor(position);
+      const fraction = position - index;
+      out.push(input[index] + (input[index + 1] - input[index]) * fraction);
+      position += this.ratio;
+    }
+    const consumed = Math.min(input.length, Math.floor(position));
+    this.leftover = input.slice(consumed);
+    this.position = position - consumed;
+    if (out.length) {
+      this.chunks.push(Float32Array.from(out));
+      this.frames += out.length;
+    }
+  }
+
+  /** Corta la grabación y devuelve lo grabado: muestras mono a 16 kHz. */
   stop() {
     if (!this.stream) return null;
-    const ctx = this.engine.ctx;
     const total = this.frames;
-    const buffer = total > 0 ? ctx.createBuffer(1, total, this.sampleRate) : null;
-    if (buffer) {
-      const out = buffer.getChannelData(0);
-      let offset = 0;
-      for (const chunk of this.chunks) {
-        out.set(chunk, offset);
-        offset += chunk.length;
-      }
+    const samples = new Float32Array(total);
+    let offset = 0;
+    for (const chunk of this.chunks) {
+      samples.set(chunk, offset);
+      offset += chunk.length;
     }
+    const duration = total / TARGET_RATE;
     this.cleanup();
-    return buffer;
+    return { samples, rate: TARGET_RATE, duration };
   }
 
   cleanup() {
@@ -367,22 +414,61 @@ export class AudioCapture {
     this.stream = null;
     this.node = null;
     this.chunks = [];
+    this.leftover = new Float32Array(0);
   }
 }
 
-/** Lee un archivo de audio (mp3, m4a, wav, ogg...) y lo transcribe. */
-export async function transcribeFile(arrayBuffer, engine, options = {}) {
+/**
+ * Decodifica el archivo a mono y a 16 kHz **durante la propia decodificación**.
+ *
+ * Es lo que permite no poner tope de tamaño: una canción de diez minutos en
+ * estéreo a 44,1 kHz ocuparía más de 200 MB si se decodifica tal cual y tumba
+ * la pestaña en un iPad. Pidiéndole al navegador que decodifique ya a 16 kHz
+ * —que es todo lo que necesita el detector de tono— baja a unos 38 MB.
+ */
+async function decodeToMono(arrayBuffer, engine) {
+  const Offline = typeof window !== 'undefined'
+    && (window.OfflineAudioContext || window.webkitOfflineAudioContext);
+
+  if (Offline) {
+    try {
+      const probe = new Offline(1, 1, TARGET_RATE);
+      const decoded = await probe.decodeAudioData(arrayBuffer.slice(0));
+      const mono = toMono(decoded);
+      return {
+        samples: Math.abs(decoded.sampleRate - TARGET_RATE) < 1
+          ? mono
+          : resample(mono, decoded.sampleRate, TARGET_RATE),
+        duration: decoded.duration,
+      };
+    } catch (e) {
+      // Navegador que no sabe decodificar a ese ritmo: seguimos por el camino normal.
+    }
+  }
+
   const ctx = await engine.ensure();
-  let audioBuffer;
+  let decoded;
   try {
-    audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    decoded = await ctx.decodeAudioData(arrayBuffer);
   } catch (e) {
-    throw new Error('No se pudo leer ese audio. Prueba con un .m4a, .mp3 o .wav.');
+    throw new Error('No se pudo leer ese audio. Prueba con un .mp3, .m4a, .wav, .ogg o .flac.');
   }
-  if (audioBuffer.duration > 360) {
-    throw new Error('El audio es muy largo (más de 6 minutos). Corta el trozo que quieras aprender.');
-  }
-  const result = await transcribeBuffer(audioBuffer, options);
+  return {
+    samples: resample(toMono(decoded), decoded.sampleRate, TARGET_RATE),
+    duration: decoded.duration,
+  };
+}
+
+/** Cuánto va a tardar, más o menos, para poder decirlo antes de empezar. */
+export function estimateWork(seconds) {
+  return Math.max(1, Math.round(seconds * 0.12));
+}
+
+/** Lee un archivo de audio (mp3, m4a, wav, ogg, flac...) y lo transcribe. */
+export async function transcribeFile(arrayBuffer, engine, options = {}) {
+  const { samples, duration } = await decodeToMono(arrayBuffer, engine);
+  if (!samples.length) throw new Error('Ese archivo no tiene audio dentro.');
+  const result = await transcribeSamples(samples, TARGET_RATE, duration, options);
   if (!result.notes.length) {
     throw new Error('No se encontró ninguna melodía clara. Esto funciona con una sola línea melódica.');
   }

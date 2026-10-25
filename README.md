@@ -73,9 +73,12 @@ compases se te escapa, y un botón te mete a practicar justo esos.
   Esto es lo que hace que la biblioteca no tenga límite, y es exacto.
 - **Pega un enlace de YouTube, Spotify o SoundCloud** y Cascada lee el título y te lleva a
   los dos caminos que sí funcionan (ver abajo).
-- **Transcribir audio** (`.mp3`, `.m4a`, `.wav`) está, **en beta**: escucha y escribe las
+- **Sube audio** (`.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac`), uno o varios de golpe, **sin
+  límite de peso ni de duración**. La transcripción está **en beta**: escucha y escribe las
   notas, detectando el tempo solo. Funciona con **una melodía sola** —voz, silbido, flauta,
-  una línea de piano— y se pierde con acordes o con una banda entera.
+  una línea de piano— y se pierde con acordes o con una banda entera. Lo único que crece
+  con la duración es el tiempo: unos 12 segundos de análisis por minuto de audio, con su
+  barra de progreso.
 - **Graba** lo que improvises en Juego libre y se guarda como una canción más.
 - **Exporta** toda tu biblioteca a un `.json` desde Ajustes. Como no hay nube, esa es la
   forma de llevártela a otro dispositivo o de no perderla si borras los datos de Safari.
@@ -141,7 +144,7 @@ python3 -m http.server 8080     # o: npm start
 
 ```bash
 npm test          # 43 pruebas del núcleo + los tokens de diseño (solo Node)
-npm run test:e2e  # 24 recorridos en Chromium (necesita playwright)
+npm run test:e2e  # 28 recorridos en Chromium (necesita playwright)
 npm run icons     # regenera los iconos desde los tokens
 ```
 
@@ -163,7 +166,7 @@ src/player.js          el tutor: modo espera, puntuación, bucle
 src/store.js           IndexedDB + localStorage, exportar e importar
 src/ui.js, src/app.js  pantallas y cableado
 tools/make_icons.py    genera los PNG del icono, sin librerías
-tests/                 núcleo, tokens y navegador
+tests/                 núcleo, tokens y navegador, con un mp3 de prueba propio
 replica/               recon, arquitectura, diseño, marca, pruebas, paridad
 .claude/skills/        el pack replica-skill, por si quieres repetir algún paso
 ```

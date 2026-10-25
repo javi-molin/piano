@@ -6,7 +6,7 @@ servidor estático del propio proyecto, y Node para el núcleo.
 ```
 node tests/engine.test.mjs    43 pruebas del núcleo (DSL, MIDI, teclado, tutor, tu piano, tempo)
 node tests/tokens.test.mjs    los tokens de diseño no se separan entre sus tres copias
-node tests/e2e.mjs            24 recorridos en un navegador de verdad
+node tests/e2e.mjs            28 recorridos en un navegador de verdad
 ```
 
 | caso | flujo | tipo | pasos | esperado | auto | resultado |
@@ -45,6 +45,10 @@ node tests/e2e.mjs            24 recorridos en un navegador de verdad
 | TMP-1 | tempo | feliz | pista de clics a 120 y a 80 bpm | los detecta con ±2 bpm de error | unit | pasa |
 | TMP-2 | tempo | negativo: silencio | audio plano | devuelve 0 y se usa el valor puesto a mano | unit | pasa |
 | HID-1 | interfaz | negativo | mirar lo que debería estar escondido | el botón de borrar, el cronómetro y los bloques del enlace no se ven | e2e | pasa |
+| MP3-1 | importar | feliz | subir un .mp3 de verdad (`tests/fixtures/melodia.mp3`, cuatro notas sintetizadas aquí) | se transcribe a Do4 Mi4 Sol4 Do5 y queda en la biblioteca marcada como transcrita | e2e | pasa |
+| MP3-2 | importar | borde: archivo grande y largo | subir un wav de 7 minutos y 37 MB | avisa de que tardará y lo importa, sin rechazarlo | e2e | pasa |
+| MP3-3 | importar | feliz | dos archivos de golpe | entran los dos y solo se abre el último | e2e | pasa |
+| MP3-4 | importar | — | mirar el selector de archivos | ofrece .mp3, .m4a, .wav, .ogg, .flac y .mid, y el texto dice que no hay límite | e2e | pasa |
 | MIC-1 | micrófono | manual | elegir micrófono en Ajustes y tocar un piano | las teclas se iluminan | manual | pendiente de probar con un piano real |
 | CAP-2 | grabar | manual | poner una canción en un altavoz y grabarla entera | sale una melodía reconocible | manual | pendiente de probar con música real |
 | CAP-3 | grabar | manual | capturar el sonido de una pestaña en un portátil | graba lo que suena en esa pestaña | manual | pendiente; en el iPad no existe y el botón no sale |

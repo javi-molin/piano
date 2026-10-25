@@ -523,6 +523,73 @@ test('un enlace que no es nada avisa en vez de romperse', async (ctx) => {
   await page.close();
 });
 
+// ------------------------------------------------------- audio sin límites
+test('un mp3 se sube y se transcribe', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.setInputFiles('#file-input', ctx.mp3Path);
+  await page.waitForSelector('[data-screen="song"]:not([hidden])', { timeout: 60000 });
+
+  const notes = await page.evaluate(() => window.__cascada.state.song.notes.map((n) => n.midi));
+  assert(notes.length >= 3, `esperaba la melodía, salieron ${notes.length} notas`);
+  // El fixture es Do4 Mi4 Sol4 Do5, sintetizado aquí mismo.
+  for (const midi of notes) {
+    assert([60, 64, 67, 72].includes(midi), `nota inesperada: ${midi}`);
+  }
+  assert(notes.includes(60) && notes.includes(72), `faltan los extremos: ${notes.join(' ')}`);
+
+  await page.click('[data-tab="library"]');
+  equal(await page.locator('#library-grid .card').count(), 1, 'la transcripción no llegó a la biblioteca');
+  assert(/transcrita/.test(await page.locator('#library-grid .card').first().textContent()), 'no se marca como transcrita');
+  equal(page.problems.length, 0, `errores de consola: ${page.problems.join(' | ')}`);
+  await page.close();
+});
+
+test('un audio largo y pesado ya no se rechaza', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.setInputFiles('#file-input', ctx.longWavPath);
+  // Avisa de que va a tardar, en vez de negarse.
+  await page.waitForFunction(() => /MB/.test(document.querySelector('#import-status').textContent), null, { timeout: 15000 });
+  await page.waitForSelector('[data-screen="song"]:not([hidden])', { timeout: 180000 });
+  const status = await page.locator('#import-status').textContent();
+  assert(!/muy largo|pesa demasiado|más de/.test(status), `lo rechazó: ${status}`);
+  const seconds = await page.evaluate(() => {
+    const song = window.__cascada.state.song;
+    return (song.lengthBeats / song.bpm) * 60;
+  });
+  assert(seconds > 120, `la canción salió demasiado corta: ${Math.round(seconds)} s`);
+  equal(page.problems.length, 0, `errores de consola: ${page.problems.join(' | ')}`);
+  await page.close();
+});
+
+test('importar dos archivos de golpe guarda los dos y abre solo el último', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.setInputFiles('#file-input', [ctx.midiPath, ctx.mp3Path]);
+  await page.waitForSelector('[data-screen="song"]:not([hidden])', { timeout: 60000 });
+  await page.click('[data-tab="library"]');
+  equal(await page.locator('#library-grid .card').count(), 2, 'no entraron las dos');
+  await page.close();
+});
+
+test('el selector de archivos acepta mp3 y compañía', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  const accept = await page.locator('#file-input').getAttribute('accept');
+  for (const extension of ['.mp3', '.m4a', '.wav', '.ogg', '.flac', '.mid']) {
+    assert(accept.includes(extension), `el selector no ofrece ${extension}`);
+  }
+  const copy = await page.locator('#dropzone').textContent();
+  assert(/\.mp3/.test(copy), 'el texto no menciona mp3');
+  assert(/[Ss]in límite/.test(copy), 'el texto no dice que no hay límite');
+  await page.close();
+});
+
 // --------------------------------------------------------------------- run
 const { server, port } = await serve();
 const base = `http://127.0.0.1:${port}`;
@@ -551,12 +618,53 @@ fs.writeFileSync(midiPath, songToMidiBytes(buildSong({
 const junkPath = path.join(tmp, 'esto-no-es-musica.mid');
 fs.writeFileSync(junkPath, Buffer.from('hola, no soy un midi ni de lejos'));
 
+// Un mp3 de verdad, sintetizado aquí (tests/fixtures/melodia.mp3).
+const mp3Path = path.join(ROOT, 'tests', 'fixtures', 'melodia.mp3');
+
+// Un wav largo y pesado, para comprobar que ya no hay tope. Se genera en el
+// momento para no cargar un archivo enorme en el repositorio.
+const longWavPath = path.join(tmp, 'siete-minutos.wav');
+fs.writeFileSync(longWavPath, longWav(7 * 60));
+
+function longWav(seconds) {
+  const rate = 44100;
+  const total = rate * seconds;
+  const data = Buffer.alloc(total * 2);
+  // Mayormente silencio con una nota larga cada veinte segundos: pesa lo que
+  // tiene que pesar y dura lo que tiene que durar, sin tardar una eternidad.
+  for (let i = 0; i < total; i++) {
+    const t = i / rate;
+    const inside = t % 20;
+    let value = 0;
+    if (inside < 2.5) {
+      const envelope = Math.min(1, inside * 40) * Math.exp(-0.8 * inside);
+      value = envelope * 0.5 * Math.sin(2 * Math.PI * 261.63 * t);
+    }
+    data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, value)) * 28000), i * 2);
+  }
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(rate, 24);
+  header.writeUInt32LE(rate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+}
+
 let passed = 0;
 const failures = [];
 for (const [name, fn] of tests) {
   const context = await browser.newContext({ permissions: ['microphone'] });
   try {
-    await fn({ context, base, midiPath, junkPath });
+    await fn({ context, base, midiPath, junkPath, mp3Path, longWavPath });
     passed++;
     process.stdout.write(`\x1b[32m·\x1b[0m`);
   } catch (error) {

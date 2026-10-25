@@ -424,9 +424,10 @@
 
       <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Elegir un archivo MIDI o de audio">
         <b>Arrastra un archivo o toca aquí</b>
-        <span>MIDI (.mid, .midi) — exacto. Audio (.mp3, .m4a, .wav) — transcripción beta.</span>
+        <span>MIDI (.mid, .midi) — exacto. Audio (.mp3, .m4a, .wav, .ogg, .flac) — transcripción beta. Sin límite de tamaño ni de duración.</span>
       </div>
-      <input type="file" id="file-input" accept=".mid,.midi,audio/midi,audio/*,.json" hidden>
+      <input type="file" id="file-input" multiple
+        accept=".mid,.midi,.mp3,.m4a,.wav,.aac,.ogg,.oga,.opus,.flac,.aiff,.aif,.json,audio/midi,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/aac,audio/*,application/json" hidden>
 
       <div class="field">
         <label class="label" for="url-input">…o pega un enlace</label>
@@ -468,7 +469,8 @@
       <details class="details">
         <summary>Ajustes de la transcripción (beta)</summary>
         <p class="hint">
-          La transcripción escucha y escribe las notas que encuentra. Funciona con <b>una melodía
+          La transcripción escucha y escribe las notas que encuentra. No hay límite de peso ni
+          de duración: un archivo largo tarda más, nada más. Funciona con <b>una melodía
           sola</b> —voz, silbido, flauta, violín, una línea de piano— y se pierde con acordes o
           con toda una banda sonando. Si quieres exactitud, importa un MIDI.
         </p>
