@@ -331,3 +331,108 @@ export function songStats(song) {
     seconds: Math.round((song.lengthBeats / song.bpm) * 60),
   };
 }
+
+// ------------------------------------------------- el piano que tienes tú
+
+/**
+ * Teclados reales, por número de teclas. `lo` es la nota más grave de fábrica;
+ * se puede mover por octavas para los modelos que no empiezan en Do.
+ */
+export const PIANO_SIZES = [
+  { keys: 0, label: 'Sin límite', lo: 21, hi: 108 },
+  { keys: 25, label: '25 teclas', lo: 48, hi: 72 },
+  { keys: 37, label: '37 teclas', lo: 48, hi: 84 },
+  { keys: 49, label: '49 teclas', lo: 36, hi: 84 },
+  { keys: 61, label: '61 teclas', lo: 36, hi: 96 },
+  { keys: 76, label: '76 teclas', lo: 28, hi: 103 },
+  { keys: 88, label: '88 teclas', lo: 21, hi: 108 },
+];
+
+export function pianoSize(keys) {
+  return PIANO_SIZES.find((p) => p.keys === Number(keys)) || PIANO_SIZES[0];
+}
+
+/** Rango real de un teclado de `keys` teclas cuya nota más grave es `lo`. */
+export function pianoRange(keys, lowShift = 0) {
+  const size = pianoSize(keys);
+  if (!size.keys) return null;
+  const lo = Math.max(21, Math.min(96, size.lo + lowShift * 12));
+  return { lo, hi: Math.min(108, lo + size.keys - 1), keys: size.keys, label: size.label };
+}
+
+export function notesOutside(notes, lo, hi) {
+  if (lo == null || hi == null) return 0;
+  let count = 0;
+  for (const n of notes) if (n.midi < lo || n.midi > hi) count++;
+  return count;
+}
+
+/**
+ * Encaja la canción en el teclado que tiene el usuario.
+ *
+ *   'show' deja las notas donde están (puede que no las alcances)
+ *   'skip' quita las que no están en tu piano
+ *   'fold' las trae a la octava más cercana que sí tienes
+ *
+ * Plegar cambia la música —un bajo sube una octava y se nota— pero es lo que
+ * hace cualquiera al tocar una pieza grande en un teclado pequeño. Devuelve
+ * cuántas notas se tocaron para poder decirlo en pantalla.
+ */
+export function fitToRange(song, options = {}) {
+  const { lo, hi } = options;
+  const mode = options.mode || 'show';
+  const outside = notesOutside(song.notes, lo, hi);
+  if (!outside || mode === 'show' || lo == null || hi == null || hi - lo < 11) {
+    return { song, outside, moved: 0, dropped: 0, mode };
+  }
+
+  let moved = 0;
+  let dropped = 0;
+  const kept = [];
+  for (const n of song.notes) {
+    if (n.midi >= lo && n.midi <= hi) { kept.push({ ...n }); continue; }
+    if (mode === 'skip') { dropped++; continue; }
+    let midi = n.midi;
+    while (midi < lo) midi += 12;
+    while (midi > hi) midi -= 12;
+    if (midi < lo || midi > hi) { dropped++; continue; }
+    moved++;
+    kept.push({ ...n, midi });
+  }
+
+  // Al plegar, dos notas pueden caer en la misma tecla a la vez.
+  kept.sort((a, b) => a.t - b.t || a.midi - b.midi || a.hand.localeCompare(b.hand));
+  const notes = [];
+  for (const n of kept) {
+    const last = notes[notes.length - 1];
+    if (last && last.midi === n.midi && Math.abs(last.t - n.t) < 1e-6) {
+      last.d = Math.max(last.d, n.d);
+      continue;
+    }
+    notes.push(n);
+  }
+
+  notes.forEach((n, i) => { n.i = i; n.finger = 0; });
+  assignFingers(notes, 'R');
+  assignFingers(notes, 'L');
+  return {
+    song: { ...song, notes, range: noteRange(notes), fittedTo: { lo, hi, mode } },
+    outside, moved, dropped, mode,
+  };
+}
+
+/** "+12 (una octava arriba)", para decirlo en pantalla sin que haya que pensar. */
+export function describeTranspose(semitones, lang = 'es') {
+  if (!semitones) return 'tono original';
+  const sign = semitones > 0 ? '+' : '−';
+  const abs = Math.abs(semitones);
+  const octaves = abs / 12;
+  const direction = semitones > 0 ? 'arriba' : 'abajo';
+  if (Number.isInteger(octaves)) {
+    // En octavas enteras la nota se llama igual, así que decirlo sobra.
+    const shape = octaves === 1 ? 'una octava' : `${octaves} octavas`;
+    return `${sign}${abs}: ${shape} ${direction}`;
+  }
+  const shape = `${abs} ${abs === 1 ? 'semitono' : 'semitonos'} ${direction}`;
+  return `${sign}${abs}: ${shape} · Do suena ${nameFromMidi(60 + semitones, lang)}`;
+}

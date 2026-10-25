@@ -340,11 +340,183 @@ test('funciona en el ancho de un móvil sin desbordarse', async (ctx) => {
   await page.close();
 });
 
+// ------------------------------------------------- el piano que tienes tú
+test('decir el tamaño de tu piano encaja la canción dentro de él', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('#open-settings');
+  await page.click('[data-piano="25"]');
+  await page.click('[data-outofrange="fold"]');
+  const range = await page.evaluate(() => JSON.parse(localStorage.getItem('cascada.settings')));
+  equal(range.pianoKeys, 25, 'no guardó el tamaño del piano');
+
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Claro de luna")');
+  await page.waitForTimeout(200);
+  assert(await page.locator('#fit-notice').isVisible(), 'no avisa de que la pieza no cabe');
+  const notice = await page.locator('#fit-notice').textContent();
+  assert(/octava más cercana/.test(notice), `aviso inesperado: ${notice}`);
+
+  const outside = await page.evaluate(() => {
+    const { lo, hi } = window.__cascada.state.fit.range;
+    return window.__cascada.state.song.notes.filter((n) => n.midi < lo || n.midi > hi).length;
+  });
+  equal(outside, 0, 'quedaron notas fuera del teclado del usuario');
+  equal(page.problems.length, 0, `errores de consola: ${page.problems.join(' | ')}`);
+  await page.close();
+});
+
+test('omitir deja fuera las notas que no tienes, y se nota en el total', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Claro de luna")');
+  const before = await page.evaluate(() => window.__cascada.state.song.notes.length);
+
+  await page.click('#open-settings');
+  await page.click('[data-piano="25"]');
+  await page.click('[data-outofrange="skip"]');
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Claro de luna")');
+  const after = await page.evaluate(() => window.__cascada.state.song.notes.length);
+  assert(after < before, `omitir debería dejar menos notas: ${after} vs ${before}`);
+  assert(/se omiten|se omite/.test(await page.locator('#fit-notice').textContent()), 'no dice que las omite');
+  await page.close();
+});
+
+test('lo que se esconde con hidden está escondido de verdad', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Estrellita")');
+  // Una pieza del catálogo no se puede borrar: el botón no debe verse.
+  assert(!(await page.locator('#song-delete').isVisible()), 'el botón de borrar sale en una pieza del catálogo');
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  assert(!(await page.locator('#link-routes').isVisible()), 'los caminos del enlace salen sin haber pegado nada');
+  assert(!(await page.locator('#capture-panel').isVisible()), 'la grabación sale sin haberla empezado');
+  assert(!(await page.locator('#transcribe-bpm-field').isVisible()), 'el tempo manual sale con el automático puesto');
+  await page.keyboard.press('Escape');
+  await page.click('[data-tab="free"]');
+  assert(!(await page.locator('#free-record-label').isVisible()), 'el cronómetro sale sin estar grabando');
+  await page.close();
+});
+
+test('sin límite de teclas no hay aviso ni se toca la canción', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Claro de luna")');
+  assert(!(await page.locator('#fit-notice').isVisible()), 'avisa sin que haya límite puesto');
+  await page.close();
+});
+
+// ------------------------------------------------------------------ tono
+test('subir una octava mueve la canción entera y se recuerda', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Estrellita")');
+  const before = await page.evaluate(() => window.__cascada.state.song.notes.map((n) => n.midi));
+  await page.click('#transpose-oct-up');
+  await page.waitForTimeout(150);
+  const after = await page.evaluate(() => window.__cascada.state.song.notes.map((n) => n.midi));
+  equal(after.length, before.length, 'se perdieron notas al transponer');
+  assert(after.every((m, i) => m - before[i] === 12), 'no subió exactamente una octava');
+  const label = await page.locator('#detail-transpose-out').textContent();
+  assert(/una octava arriba/.test(label), `etiqueta inesperada: ${label}`);
+
+  await page.click('#transpose-down');
+  await page.waitForTimeout(100);
+  assert(/11 semitonos arriba/.test(await page.locator('#detail-transpose-out').textContent()), 'el ajuste fino no funciona');
+
+  await page.click('#transpose-reset');
+  await page.waitForTimeout(100);
+  equal(await page.locator('#detail-transpose-out').textContent(), 'tono original');
+
+  await page.click('#transpose-oct-down');
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Estrellita")');
+  await page.waitForTimeout(150);
+  assert(/una octava abajo/.test(await page.locator('#detail-transpose-out').textContent()), 'no recordó el tono de la canción');
+  equal(page.problems.length, 0, `errores de consola: ${page.problems.join(' | ')}`);
+  await page.close();
+});
+
+// --------------------------------------------- enlaces de YouTube/Spotify
+test('un enlace de YouTube lleva a los dos caminos que sí funcionan', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.route('**oembed**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ title: 'Estudio de prueba', author_name: 'Alguien' }),
+  }));
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.fill('#url-input', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  await page.click('#url-go');
+  await page.waitForSelector('#link-routes:not([hidden])', { timeout: 8000 });
+  const head = await page.locator('#route-title').textContent();
+  assert(/Estudio de prueba/.test(head), `no leyó el título: ${head}`);
+  assert((await page.locator('#route-search a').count()) >= 1, 'no ofrece buscar un MIDI');
+  const href = await page.locator('#route-search a').first().getAttribute('href');
+  assert(/midi/i.test(decodeURIComponent(href)), `la búsqueda no busca un midi: ${href}`);
+  assert(await page.locator('#capture-mic').isVisible(), 'no ofrece transcribir de oído');
+  const why = await page.locator('#route-why').textContent();
+  assert(/no lleva las notas dentro/.test(why), 'no explica por qué el enlace no basta');
+  equal(page.problems.length, 0, `errores de consola: ${page.problems.join(' | ')}`);
+  await page.close();
+});
+
+test('si el título no se puede leer, los caminos siguen estando', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.route('**oembed**', (route) => route.abort());
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.fill('#url-input', 'https://open.spotify.com/track/abc123');
+  await page.click('#url-go');
+  await page.waitForSelector('#link-routes:not([hidden])', { timeout: 8000 });
+  assert(/Spotify/.test(await page.locator('#route-title').textContent()), 'no identifica el servicio');
+  assert(await page.locator('#capture-mic').isVisible(), 'sin título ya no deja transcribir');
+  await page.close();
+});
+
+test('escuchar y transcribir abre la grabación y se puede cancelar', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.fill('#url-input', 'https://youtu.be/abc123');
+  await page.click('#url-go');
+  await page.waitForSelector('#link-routes:not([hidden])', { timeout: 8000 });
+  await page.click('#capture-mic');
+  await page.waitForSelector('#capture-panel:not([hidden])', { timeout: 10000 });
+  await page.waitForFunction(() => document.querySelector('#capture-time').textContent !== '0:00', null, { timeout: 8000 });
+  await page.click('#capture-cancel');
+  assert(!(await page.locator('#capture-panel').isVisible()), 'no se cerró la grabación');
+  await page.close();
+});
+
+test('un enlace que no es nada avisa en vez de romperse', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.fill('#url-input', 'esto no es una url');
+  await page.click('#url-go');
+  await page.waitForTimeout(400);
+  assert(/dirección web/.test(await page.locator('#import-status').textContent()), 'no avisa del enlace malo');
+  assert(!(await page.locator('#link-routes').isVisible()), 'enseña caminos para un enlace inválido');
+  await page.close();
+});
+
 // --------------------------------------------------------------------- run
 const { server, port } = await serve();
 const base = `http://127.0.0.1:${port}`;
 const chromium = await loadPlaywright();
-const browser = await chromium.launch({ headless: !HEADED, args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
+const browser = await chromium.launch({
+  headless: !HEADED,
+  args: [
+    '--autoplay-policy=no-user-gesture-required',
+    '--mute-audio',
+    // Un micrófono de mentira, para poder recorrer la grabación sin hardware.
+    '--use-fake-ui-for-media-stream',
+    '--use-fake-device-for-media-stream',
+  ],
+});
 
 // Un MIDI de verdad y un archivo basura, generados aquí.
 const { buildSong } = await import('../src/score.js');
@@ -362,7 +534,7 @@ fs.writeFileSync(junkPath, Buffer.from('hola, no soy un midi ni de lejos'));
 let passed = 0;
 const failures = [];
 for (const [name, fn] of tests) {
-  const context = await browser.newContext({ permissions: [] });
+  const context = await browser.newContext({ permissions: ['microphone'] });
   try {
     await fn({ context, base, midiPath, junkPath });
     passed++;

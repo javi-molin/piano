@@ -17,8 +17,8 @@ Not shippable yet: 4 must-have features are not done.
 - onboarding                   100.0  (1 features)
 
 ## Missing, in build order
-- [must] anadir: Anadir cancion pegando un enlace, partial  (solo enlaces directos a un .mid y si el servidor lo permite; el original acepta links de streaming)
-- [must] anadir: Conversion automatica de audio a notas, partial  (transcriptor propio en el navegador, monofonico y marcado beta; el original usa un modelo en servidor)
+- [must] anadir: Anadir cancion pegando un enlace, partial  (reconoce YouTube/Spotify/SoundCloud, lee el titulo por oEmbed publico y lleva a buscar un MIDI o a transcribir de oido; el original lo convierte en su servidor)
+- [must] anadir: Conversion automatica de audio a notas, partial  (transcriptor propio en el navegador con tempo automatico, desde archivo o grabando lo que suena; monofonico y marcado beta)
 - [must] entrada: Tocar con piano acustico por microfono, partial  (deteccion por picos del espectro: bien con notas sueltas, aproximada con acordes)
 - [must] entrada: Tocar con teclado MIDI, partial  (Web MIDI donde exista; Safari en iPad no lo trae y lo dice)
 - [could] ajustes: Varios idiomas, no  (solo espanol)
@@ -43,3 +43,7 @@ Not shippable yet: 4 must-have features are not done.
 - Metronomo y claqueta
 - Mapa de calor de compases fallados
 - Calibracion de latencia
+- Decir cuantas teclas tiene tu piano
+- Saltar o plegar las notas que tu piano no tiene
+- Detectar solo el tempo de lo que grabas
+- Grabar lo que suena para transcribirlo

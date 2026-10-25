@@ -155,9 +155,19 @@
           </div>
         </div>
         <div class="field">
-          <label class="label" for="detail-transpose">Transportar <output id="detail-transpose-out">0</output></label>
-          <input type="range" id="detail-transpose" min="-12" max="12" step="1" value="0">
+          <span class="label" id="transpose-label">Tono <output id="detail-transpose-out">tono original</output></span>
+          <div class="buttonrow">
+            <button class="btn btn-ghost" type="button" id="transpose-oct-down">− Octava</button>
+            <button class="btn btn-ghost" type="button" id="transpose-down">− Semitono</button>
+            <button class="btn btn-ghost" type="button" id="transpose-reset">Original</button>
+            <button class="btn btn-ghost" type="button" id="transpose-up">+ Semitono</button>
+            <button class="btn btn-ghost" type="button" id="transpose-oct-up">+ Octava</button>
+          </div>
+          <label class="sr-only" for="detail-transpose">Transportar en semitonos</label>
+          <input type="range" id="detail-transpose" min="-24" max="24" step="1" value="0">
+          <p class="hint">Sube o baja la canción entera. La digitación se recalcula sola.</p>
         </div>
+        <p class="hint notice" id="fit-notice" hidden></p>
         <button class="btn btn-primary btn-big" id="song-start" type="button">Tocar la canción completa</button>
       </div>
 
@@ -256,6 +266,32 @@
         </div>
         <div class="field row">
           <label class="switch"><input type="checkbox" id="set-shownames"> <span>Nombre de la nota dentro de la nota que cae</span></label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Tu piano</h3>
+        <div class="field">
+          <span class="label">Cuántas teclas tiene</span>
+          <div class="segmented" id="set-piano" role="radiogroup" aria-label="Tamaño de tu piano"></div>
+        </div>
+        <div class="field" id="piano-low-field" hidden>
+          <span class="label">Nota más grave</span>
+          <div class="buttonrow">
+            <button class="btn btn-ghost" type="button" id="piano-low-down">− Octava</button>
+            <span class="chip" id="piano-range-label">—</span>
+            <button class="btn btn-ghost" type="button" id="piano-low-up">+ Octava</button>
+          </div>
+          <p class="hint">Muévela si tu teclado no empieza en un Do.</p>
+        </div>
+        <div class="field" id="out-of-range-field" hidden>
+          <span class="label">Las notas que tu piano no tiene</span>
+          <div class="segmented" id="set-outofrange" role="radiogroup" aria-label="Qué hacer con las notas fuera de tu piano">
+            <button type="button" role="radio" aria-checked="true" data-outofrange="fold">Traerlas a la octava más cercana</button>
+            <button type="button" role="radio" aria-checked="false" data-outofrange="skip">Omitirlas</button>
+            <button type="button" role="radio" aria-checked="false" data-outofrange="show">Mostrarlas igual</button>
+          </div>
+          <p class="hint">Plegarlas cambia un poco la música —un bajo sube una octava y se nota— pero te deja tocar la pieza entera en el teclado que tienes.</p>
         </div>
       </div>
 
@@ -393,22 +429,53 @@
       <input type="file" id="file-input" accept=".mid,.midi,audio/midi,audio/*,.json" hidden>
 
       <div class="field">
-        <label class="label" for="url-input">…o pega el enlace a un archivo MIDI</label>
+        <label class="label" for="url-input">…o pega un enlace</label>
         <div class="buttonrow">
-          <input type="url" id="url-input" placeholder="https://…/cancion.mid" autocomplete="off">
-          <button class="btn btn-primary" id="url-go" type="button">Traer</button>
+          <input type="url" id="url-input" placeholder="YouTube, Spotify o un .mid" autocomplete="off">
+          <button class="btn btn-primary" id="url-go" type="button">Analizar</button>
         </div>
-        <p class="hint">Tiene que ser un enlace directo a un .mid y el servidor debe permitir la descarga. Un enlace de YouTube o de Spotify no sirve: eso es audio con derechos, no una partitura.</p>
+        <p class="hint">Un <b>.mid</b> se trae directo y es exacto. Un enlace de <b>YouTube o Spotify</b> no trae notas dentro: te llevo a las dos formas que sí funcionan.</p>
+      </div>
+
+      <div class="routes" id="link-routes" hidden>
+        <p class="route-head" id="route-title">—</p>
+        <div class="route">
+          <b>Busca un MIDI de esta canción</b>
+          <span>Es lo exacto: las notas de verdad, con las dos manos, no una aproximación.</span>
+          <div class="buttonrow" id="route-search"></div>
+        </div>
+        <div class="route">
+          <b>O ponla y deja que Cascada la escuche</b>
+          <span>Saca la melodía de oído mientras suena. Va bien con la línea principal; con toda la banda a la vez se pierde.</span>
+          <div class="buttonrow">
+            <button class="btn btn-primary" id="capture-mic" type="button">Grabar por micrófono</button>
+            <button class="btn btn-ghost" id="capture-tab" type="button" hidden>Capturar el sonido de otra pestaña</button>
+          </div>
+        </div>
+        <p class="hint" id="route-why"></p>
+      </div>
+
+      <div class="capture" id="capture-panel" hidden>
+        <div class="buttonrow">
+          <span class="chip" id="capture-time">0:00</span>
+          <button class="btn btn-record" id="capture-stop" type="button">■ Parar y transcribir</button>
+          <button class="btn btn-ghost" id="capture-cancel" type="button">Cancelar</button>
+        </div>
+        <div class="level"><div class="level-fill" id="capture-level"></div></div>
+        <p class="hint" id="capture-hint">Dale al play en la canción. Escucho hasta 5 minutos.</p>
       </div>
 
       <details class="details">
-        <summary>Transcribir audio a notas (beta)</summary>
+        <summary>Ajustes de la transcripción (beta)</summary>
         <p class="hint">
-          Esto escucha el archivo y escribe las notas que encuentra. Funciona con <b>una melodía
+          La transcripción escucha y escribe las notas que encuentra. Funciona con <b>una melodía
           sola</b> —voz, silbido, flauta, violín, una línea de piano— y se pierde con acordes o
           con toda una banda sonando. Si quieres exactitud, importa un MIDI.
         </p>
-        <div class="field">
+        <div class="field row">
+          <label class="switch"><input type="checkbox" id="transcribe-auto" checked> <span>Detectar el tempo solo</span></label>
+        </div>
+        <div class="field" id="transcribe-bpm-field" hidden>
           <label class="label" for="transcribe-bpm">Tempo del audio <output id="transcribe-bpm-out">100</output></label>
           <input type="range" id="transcribe-bpm" min="40" max="200" step="2" value="100">
         </div>

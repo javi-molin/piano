@@ -15,6 +15,9 @@ Severidad: S1 rompe la app · S2 falsea lo que ves · S3 molesta · S4 cosmétic
 | 9 | S4 | Teclas negras demasiado anchas, las blancas de en medio quedaban en un hilo | proporción 0,62 del ancho de blanca | cerrado; 0,56, como un piano |
 | 10 | S4 | El teclado se extendía hasta el Si de la octava aunque la pieza acabara en Do | redondeo a octava completa siempre | cerrado; si la nota más alta es un Do, el teclado termina ahí |
 
+| 11 | S2 | Cosas escondidas con `hidden` **se seguían viendo**: el botón de borrar en una pieza del catálogo, el cronómetro de grabación, el bloque de los enlaces | cualquier regla de `display` del autor (un `.btn` es `inline-flex`) gana al `display:none` del atributo | cerrado con `[hidden] { display: none !important }` y una prueba de navegador que recorre los cuatro casos |
+| 12 | S3 | La etiqueta del tono decía "una octava arriba · Do suena Do" | en octavas enteras la nota se llama igual, así que la coletilla sobraba | cerrado |
+
 **Abiertos: ninguno de S1 ni S2.** Lo que queda son límites conocidos, no fallos:
 la transcripción de audio es monofónica, la detección por micrófono se confunde con acordes
 densos, y Safari en iPad no tiene Web MIDI.

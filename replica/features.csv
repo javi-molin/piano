@@ -4,8 +4,8 @@ Fijar canciones arriba,biblioteca,should,yes,yes,
 Buscar y filtrar canciones,biblioteca,should,yes,yes,
 Catalogo listo para tocar por dificultad,catalogo,must,yes,yes,"14 piezas de dominio publico, arregladas aqui"
 Anadir cancion desde archivo,anadir,must,yes,yes,MIDI exacto; tambien audio y copias .json
-Anadir cancion pegando un enlace,anadir,must,yes,partial,solo enlaces directos a un .mid y si el servidor lo permite; el original acepta links de streaming
-Conversion automatica de audio a notas,anadir,must,yes,partial,"transcriptor propio en el navegador, monofonico y marcado beta; el original usa un modelo en servidor"
+Anadir cancion pegando un enlace,anadir,must,yes,partial,"reconoce YouTube/Spotify/SoundCloud, lee el titulo por oEmbed publico y lleva a buscar un MIDI o a transcribir de oido; el original lo convierte en su servidor"
+Conversion automatica de audio a notas,anadir,must,yes,partial,"transcriptor propio en el navegador con tempo automatico, desde archivo o grabando lo que suena; monofonico y marcado beta"
 Notas que caen sobre el teclado,reproductor,must,yes,yes,
 Teclado en pantalla tocable,reproductor,must,yes,yes,"multitouch, y tambien con el teclado del ordenador"
 Modo espera: la cancion espera tu nota,reproductor,must,yes,yes,"ademas, si te adelantas la cancion te sigue"
@@ -44,7 +44,11 @@ Velocidad desde 25 por ciento,mejora,could,no,yes,mejora propia: el original sol
 Teclado libre para improvisar y grabar,mejora,could,no,yes,mejora propia
 Grabar lo que toques y guardarlo como cancion,mejora,could,no,yes,mejora propia
 Exportar e importar toda tu biblioteca,mejora,could,no,yes,"un .json con canciones, progreso y racha"
-Transponer la cancion de tono,mejora,could,no,yes,"mas o menos 12 semitonos, con la digitacion recalculada"
+Transponer la cancion de tono,mejora,could,no,yes,"por octavas o por semitonos, de -24 a +24, con la digitacion recalculada"
 Metronomo y claqueta,mejora,could,no,yes,mejora propia
 Mapa de calor de compases fallados,mejora,could,no,yes,y un boton para practicar justo esos compases
 Calibracion de latencia,mejora,could,no,yes,de -150 a +300 ms
+Decir cuantas teclas tiene tu piano,mejora,could,no,yes,"25 a 88 teclas, con la nota mas grave ajustable por octavas"
+Saltar o plegar las notas que tu piano no tiene,mejora,could,no,yes,"omitirlas o traerlas a la octava mas cercana, dicho en pantalla"
+Detectar solo el tempo de lo que grabas,mejora,could,no,yes,autocorrelacion de la envolvente de ataques
+Grabar lo que suena para transcribirlo,mejora,could,no,yes,"por microfono, o el sonido de otra pestana donde el navegador lo permita"

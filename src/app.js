@@ -53,11 +53,13 @@ function wireSongDetail() {
     state.options.speed = Number(ev.target.value) / 100;
     $('#detail-speed-out').textContent = `${ev.target.value} %`;
   });
-  $('#detail-transpose').addEventListener('input', (ev) => {
-    state.options.transpose = Number(ev.target.value);
-    ui.applyTranspose();
-    $('#detail-transpose-out').textContent = ui.transposeLabel(state.options.transpose);
-  });
+  $('#detail-transpose').addEventListener('input', (ev) => ui.setTranspose(Number(ev.target.value)));
+  const shift = (amount) => () => ui.setTranspose(state.options.transpose + amount);
+  $('#transpose-oct-down').addEventListener('click', shift(-12));
+  $('#transpose-down').addEventListener('click', shift(-1));
+  $('#transpose-up').addEventListener('click', shift(1));
+  $('#transpose-oct-up').addEventListener('click', shift(12));
+  $('#transpose-reset').addEventListener('click', () => ui.setTranspose(0));
   $('#song-start').addEventListener('click', () => ui.startPlay(null, false));
   $('#song-pin').addEventListener('click', () => {
     store.togglePinned(state.song.id);
@@ -136,9 +138,10 @@ function wirePlayer() {
 
 function wireAddSheet() {
   $('#add-song').addEventListener('click', ui.openAddSheet);
-  $('#add-close').addEventListener('click', ui.closeAddSheet);
+  const closeAdd = () => { ui.cancelCapture(); ui.hideRoutes(); ui.closeAddSheet(); };
+  $('#add-close').addEventListener('click', closeAdd);
   $('#add-sheet').addEventListener('click', (ev) => {
-    if (ev.target === $('#add-sheet')) ui.closeAddSheet();
+    if (ev.target === $('#add-sheet')) closeAdd();
   });
   const input = $('#file-input');
   const zone = $('#dropzone');
@@ -160,9 +163,17 @@ function wireAddSheet() {
     const files = ev.dataTransfer && ev.dataTransfer.files;
     if (files && files.length) ui.handleFiles([...files]);
   });
-  $('#url-go').addEventListener('click', () => ui.fetchMidiUrl($('#url-input').value.trim()));
+  const analyze = () => ui.analyzeLink($('#url-input').value.trim());
+  $('#url-go').addEventListener('click', analyze);
   $('#url-input').addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') ui.fetchMidiUrl($('#url-input').value.trim());
+    if (ev.key === 'Enter') { ev.preventDefault(); analyze(); }
+  });
+  $('#capture-mic').addEventListener('click', () => ui.startCapture('mic'));
+  $('#capture-tab').addEventListener('click', () => ui.startCapture('tab'));
+  $('#capture-stop').addEventListener('click', () => ui.finishCapture());
+  $('#capture-cancel').addEventListener('click', () => ui.cancelCapture());
+  $('#transcribe-auto').addEventListener('change', (ev) => {
+    $('#transcribe-bpm-field').hidden = ev.target.checked;
   });
   $('#transcribe-bpm').addEventListener('input', (ev) => {
     $('#transcribe-bpm-out').textContent = ev.target.value;
@@ -229,6 +240,33 @@ function wireSettings() {
   const setInput = segmented('#set-input', 'input', (value) => { ui.setInputMode(value); });
   ui.setInputSegmentSetter(setInput);
 
+  // Tu piano: el tamaño, dónde empieza y qué pasa con lo que no cabe.
+  const afterPianoChange = () => {
+    ui.renderPianoSettings();
+    if (state.songBase) {
+      ui.applyArrangement();
+      ui.renderSongDetail();
+    }
+  };
+  segmented('#set-piano', 'piano', (value) => {
+    state.settings = store.saveSettings({ pianoKeys: Number(value), pianoLowShift: 0 });
+    afterPianoChange();
+  });
+  segmented('#set-outofrange', 'outofrange', (value) => {
+    state.settings = store.saveSettings({ outOfRange: value });
+    afterPianoChange();
+  });
+  const moveLow = (octaves) => () => {
+    const range = ui.userPianoRange();
+    if (!range) return;
+    state.settings = store.saveSettings({
+      pianoLowShift: Math.max(-3, Math.min(3, (state.settings.pianoLowShift || 0) + octaves)),
+    });
+    afterPianoChange();
+  };
+  $('#piano-low-down').addEventListener('click', moveLow(-1));
+  $('#piano-low-up').addEventListener('click', moveLow(1));
+
   $('#export-library').addEventListener('click', ui.doExport);
   $('#import-library').addEventListener('click', () => {
     ui.openAddSheet();
@@ -253,7 +291,7 @@ function wireComputerKeyboard() {
 
     if (ev.key === 'Escape') {
       if (!$('#results').hidden) { $('#results').hidden = true; ui.closePlayer(); return; }
-      if (!$('#add-sheet').hidden) { ui.closeAddSheet(); return; }
+      if (!$('#add-sheet').hidden) { ui.cancelCapture(); ui.hideRoutes(); ui.closeAddSheet(); return; }
       if (!$('#player').hidden) { ui.closePlayer(); return; }
     }
     if (ev.key === ' ' && !$('#player').hidden) {

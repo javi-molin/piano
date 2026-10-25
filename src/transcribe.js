@@ -115,7 +115,6 @@ function freqToMidi(freq) {
  * options: { bpm, quantize (en beats, 0 = sin cuantizar), onProgress }
  */
 export async function transcribeBuffer(audioBuffer, options = {}) {
-  const bpm = Math.max(30, Math.min(220, options.bpm || 100));
   const quantize = options.quantize != null ? options.quantize : 0.25;
   const onProgress = options.onProgress || (() => {});
 
@@ -177,6 +176,10 @@ export async function transcribeBuffer(audioBuffer, options = {}) {
   }
   if (current) segments.push(current);
 
+  const detectedBpm = estimateTempo(energies, secondsPerFrame);
+  const bpm = options.bpm
+    ? Math.max(30, Math.min(220, options.bpm))
+    : (detectedBpm || 100);
   const beatsPerSecond = bpm / 60;
   const minFrames = Math.max(3, Math.round(0.06 / secondsPerFrame));
   const notes = [];
@@ -206,7 +209,165 @@ export async function transcribeBuffer(audioBuffer, options = {}) {
   if (low > notes.length * 0.25) for (const n of notes) if (n.midi < 55) n.hand = 'L';
 
   onProgress(1);
-  return { notes, bpm, frames, seconds: audioBuffer.duration };
+  return { notes, bpm, detectedBpm, frames, seconds: audioBuffer.duration };
+}
+
+/**
+ * Tempo a ojo, por autocorrelación de la envolvente de ataques.
+ *
+ * No hace falta que el usuario adivine los bpm de lo que grabó: si hay pulso,
+ * sale solo; si no, devuelve 0 y se usa el valor que haya puesto a mano.
+ */
+export function estimateTempo(energies, secondsPerFrame, min = 50, max = 190) {
+  const n = energies.length;
+  if (n < 32 || !secondsPerFrame) return 0;
+  const onset = new Float32Array(n);
+  let total = 0;
+  for (let i = 1; i < n; i++) {
+    onset[i] = Math.max(0, energies[i] - energies[i - 1]);
+    total += onset[i];
+  }
+  if (total <= 0) return 0;
+
+  const minLag = Math.max(2, Math.round(60 / max / secondsPerFrame));
+  const maxLag = Math.min(n - 2, Math.round(60 / min / secondsPerFrame));
+  if (maxLag <= minLag) return 0;
+
+  let bestLag = 0;
+  let bestScore = 0;
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let sum = 0;
+    const limit = n - lag;
+    for (let i = 1; i < limit; i++) sum += onset[i] * onset[i + lag];
+    const score = sum / limit;
+    if (score > bestScore) { bestScore = score; bestLag = lag; }
+  }
+  if (!bestLag) return 0;
+
+  let bpm = 60 / (bestLag * secondsPerFrame);
+  while (bpm < min) bpm *= 2;
+  while (bpm > max) bpm /= 2;
+  return Math.round(bpm);
+}
+
+/**
+ * Graba lo que suena, para transcribirlo después.
+ *
+ * Dos fuentes: el micrófono (pon la canción en un altavoz y que escuche) o el
+ * sonido de otra pestaña, donde el navegador lo permita. En las dos manda el
+ * usuario: el navegador pide permiso y enseña qué se está compartiendo.
+ * Es para sacar de oído lo que estás escuchando, como hace cualquiera con un
+ * instrumento delante; no descarga nada de ningún sitio.
+ */
+export class AudioCapture {
+  constructor(engine) {
+    this.engine = engine;
+    this.stream = null;
+    this.node = null;
+    this.chunks = [];
+    this.frames = 0;
+    this.startedAt = 0;
+    this.onLevel = null;
+    this.maxSeconds = 300;
+    this.onAuto = null;
+  }
+
+  static get micSupported() {
+    return typeof navigator !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  static get tabSupported() {
+    return typeof navigator !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  }
+
+  get recording() { return !!this.stream; }
+
+  get seconds() {
+    return this.sampleRate ? this.frames / this.sampleRate : 0;
+  }
+
+  async start(source = 'mic') {
+    if (this.stream) throw new Error('Ya está grabando.');
+    const ctx = await this.engine.ensure();
+    const quality = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+
+    if (source === 'tab') {
+      if (!AudioCapture.tabSupported) {
+        throw new Error('Este navegador no deja capturar el sonido de otra pestaña. En el iPad usa el micrófono.');
+      }
+      this.stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: quality });
+      if (!this.stream.getAudioTracks().length) {
+        this.cleanup();
+        throw new Error('Compartiste la pestaña pero no su sonido. Vuelve a intentarlo marcando "compartir audio".');
+      }
+      for (const track of this.stream.getVideoTracks()) track.stop();
+    } else {
+      if (!AudioCapture.micSupported) throw new Error('Este navegador no da acceso al micrófono.');
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: { ...quality, channelCount: 1 } });
+    }
+
+    this.sampleRate = ctx.sampleRate;
+    this.chunks = [];
+    this.frames = 0;
+    this.startedAt = Date.now();
+
+    const source_ = ctx.createMediaStreamSource(this.stream);
+    // ScriptProcessor está marcado como obsoleto, pero es lo único que recoge
+    // muestras crudas en todos los navegadores, Safari incluido.
+    this.node = ctx.createScriptProcessor(4096, 1, 1);
+    const sink = ctx.createGain();
+    sink.gain.value = 0; // conectado al destino para que corra, en silencio para no acoplar
+    this.node.onaudioprocess = (event) => {
+      const data = event.inputBuffer.getChannelData(0);
+      this.chunks.push(new Float32Array(data));
+      this.frames += data.length;
+      if (this.onLevel) {
+        let peak = 0;
+        for (let i = 0; i < data.length; i += 8) peak = Math.max(peak, Math.abs(data[i]));
+        this.onLevel(Math.min(1, peak * 1.6));
+      }
+      if (this.seconds >= this.maxSeconds && this.onAuto) {
+        const done = this.onAuto;
+        this.onAuto = null;
+        done();
+      }
+    };
+    source_.connect(this.node);
+    this.node.connect(sink);
+    sink.connect(ctx.destination);
+    this.sink = sink;
+    this.source = source_;
+    return true;
+  }
+
+  /** Corta la grabación y devuelve lo grabado como AudioBuffer. */
+  stop() {
+    if (!this.stream) return null;
+    const ctx = this.engine.ctx;
+    const total = this.frames;
+    const buffer = total > 0 ? ctx.createBuffer(1, total, this.sampleRate) : null;
+    if (buffer) {
+      const out = buffer.getChannelData(0);
+      let offset = 0;
+      for (const chunk of this.chunks) {
+        out.set(chunk, offset);
+        offset += chunk.length;
+      }
+    }
+    this.cleanup();
+    return buffer;
+  }
+
+  cleanup() {
+    if (this.node) {
+      this.node.onaudioprocess = null;
+      try { this.node.disconnect(); this.sink.disconnect(); this.source.disconnect(); } catch (e) { /* ya */ }
+    }
+    if (this.stream) for (const track of this.stream.getTracks()) track.stop();
+    this.stream = null;
+    this.node = null;
+    this.chunks = [];
+  }
 }
 
 /** Lee un archivo de audio (mp3, m4a, wav, ogg...) y lo transcribe. */

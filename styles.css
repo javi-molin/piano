@@ -40,6 +40,12 @@
 
 * { box-sizing: border-box; }
 
+/* El atributo hidden tiene que ganar siempre. Sin esto, cualquier regla de
+   display del autor lo anula sin avisar: un .btn es inline-flex y seguiría
+   viéndose, un bloque grid también. Es el origen clásico del "pero si lo
+   escondí". */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -118,6 +124,7 @@ kbd {
   transition: transform var(--motion), background var(--motion), opacity var(--motion);
   display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
 }
+.btn { text-decoration: none; }
 .btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .45; cursor: default; }
 .btn-primary { background: var(--c-accent); color: var(--c-on-accent); }
@@ -194,6 +201,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 output { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--c-text-muted); }
+/* La etiqueta va en versales; lo que sale dentro de ella, no: son frases. */
+.label output, fieldset.field legend output { text-transform: none; letter-spacing: 0; }
 
 .switch { display: inline-flex; align-items: center; gap: var(--s3); min-height: var(--touch); cursor: pointer; }
 .switch input { width: 26px; height: 26px; accent-color: var(--c-accent); }
@@ -223,7 +232,6 @@ fieldset.field legend, .label {
   padding: var(--s5) calc(var(--safe-r) + var(--s4)) calc(var(--safe-b) + 96px) calc(var(--safe-l) + var(--s4));
   max-width: 1100px; margin: 0 auto; width: 100%;
 }
-.screen[hidden] { display: none; }
 
 .screen-head { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; justify-content: space-between; margin-bottom: var(--s4); }
 .screen-head .sub { flex: 1 1 100%; }
@@ -356,7 +364,6 @@ fieldset.field legend, .label {
   display: flex; flex-direction: column;
   padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
 }
-.player[hidden] { display: none; }
 
 .player-top {
   display: flex; align-items: center; gap: var(--s3);
@@ -379,7 +386,6 @@ fieldset.field legend, .label {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   pointer-events: none; text-align: center;
 }
-.player-overlay[hidden] { display: none; }
 .player-overlay span {
   background: color-mix(in srgb, var(--c-bg) 80%, transparent);
   border: 1px solid var(--c-warn); color: var(--c-warn);
@@ -415,7 +421,6 @@ fieldset.field legend, .label {
   padding: calc(var(--safe-t) + var(--s4)) var(--s3) calc(var(--safe-b) + var(--s3));
   overflow: auto;
 }
-.sheet-backdrop[hidden] { display: none; }
 .sheet {
   background: var(--c-surface); border: 1px solid var(--c-border);
   border-radius: var(--r-lg); box-shadow: var(--shadow-pop);
@@ -510,3 +515,27 @@ fieldset.field legend, .label {
 /* Modo claro: la app es oscura por diseño (atril, de noche), pero el texto
    sigue cumpliendo contraste si el sistema fuerza claro en los controles. */
 @media print { .tabbar, .player, .sheet-backdrop { display: none !important; } }
+
+/* ------------------------------------------------- enlaces y grabación */
+.routes { display: grid; gap: var(--s3); margin-bottom: var(--s4); }
+.route-head {
+  font-weight: 600; font-size: 15px;
+  background: var(--c-surface-2); border: 1px solid var(--c-border);
+  border-radius: var(--r-md); padding: var(--s3);
+}
+.route {
+  display: grid; gap: var(--s2);
+  border-left: 3px solid var(--c-accent); padding-left: var(--s3);
+}
+.route b { font-size: 15px; }
+.route span { color: var(--c-text-muted); font-size: 14px; }
+.capture {
+  background: var(--c-surface-2); border: 1px solid var(--c-border-input);
+  border-radius: var(--r-md); padding: var(--s4); margin-bottom: var(--s4);
+}
+.capture .level { margin-top: var(--s3); }
+.notice {
+  background: var(--c-surface-2); border: 1px solid var(--c-border);
+  border-left: 3px solid var(--c-warn);
+  border-radius: var(--r-sm); padding: var(--s3); margin: 0 0 var(--s5);
+}

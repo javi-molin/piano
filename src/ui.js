@@ -1,11 +1,12 @@
 // ui.js — las pantallas y el pegamento entre ellas.
 
-import { buildSong, nameFromMidi, transposeSong, songStats, beatsPerBar, autoSections } from './score.js';
+import { buildSong, nameFromMidi, transposeSong, songStats, beatsPerBar,
+  fitToRange, pianoRange, PIANO_SIZES, describeTranspose } from './score.js';
 import { CATALOG, applyWrittenFingers } from './songs.js';
 import { engine, TIMBRE_NAMES } from './audio.js';
 import { songFromMidi, songToMidiBytes, MidiInput, estimateDifficulty } from './midi.js';
 import { MicInput } from './mic.js';
-import { transcribeFile } from './transcribe.js';
+import { transcribeFile, transcribeBuffer, AudioCapture } from './transcribe.js';
 import { buildLayout, wholeOctaves, drawKeyboard, attachPointerInput, computerKeyToMidi } from './keyboard.js';
 import { drawRoll, keyboardMarks, barHeatmap } from './roll.js';
 import { Player, MODES } from './player.js';
@@ -32,6 +33,8 @@ const state = {
   midiInput: null,
   micInput: null,
   lastResult: null,
+  fit: null,
+  link: null,
   free: { base: 48, sustain: false, recording: null, pressed: new Set(), detach: null, raf: 0 },
 };
 
@@ -335,19 +338,39 @@ function openSong(id) {
   const song = findSong(id);
   if (!song) { toast('Esa canción ya no está.', 'bad'); return; }
   state.songBase = song;
-  state.options.transpose = 0;
-  applyTranspose();
+  state.options.transpose = store.getProgress(id).transpose || 0;
+  applyArrangement();
   state.range = null;
   state.loop = false;
   renderSongDetail();
   setScreen('song');
 }
 
-function applyTranspose() {
-  state.song = state.options.transpose
+/** El rango del teclado que el usuario dijo tener, o null si no puso límite. */
+function userPianoRange() {
+  return pianoRange(state.settings.pianoKeys, state.settings.pianoLowShift);
+}
+
+/**
+ * Lo que se toca sale de dos pasos encadenados: primero el tono que pediste,
+ * y después lo que de verdad cabe en tu teclado. En ese orden, porque subir
+ * una octava puede sacar notas del piano y hay que recortarlas después.
+ */
+function applyArrangement() {
+  const transposed = state.options.transpose
     ? transposeSong(state.songBase, state.options.transpose)
     : state.songBase;
+  const range = userPianoRange();
+  const fit = fitToRange(transposed, range
+    ? { lo: range.lo, hi: range.hi, mode: state.settings.outOfRange }
+    : {});
+  state.song = fit.song;
+  state.fit = { ...fit, range };
+  return fit;
 }
+
+// El nombre viejo, por compatibilidad con quien ya lo llamaba.
+const applyTranspose = applyArrangement;
 
 function renderSongDetail() {
   const song = state.song;
@@ -372,7 +395,8 @@ function renderSongDetail() {
   $('#detail-speed').value = String(Math.round(state.options.speed * 100));
   $('#detail-speed-out').textContent = `${Math.round(state.options.speed * 100)} %`;
   $('#detail-transpose').value = String(state.options.transpose);
-  $('#detail-transpose-out').textContent = transposeLabel(state.options.transpose);
+  $('#detail-transpose-out').textContent = describeTranspose(state.options.transpose, state.settings.noteNames);
+  renderFitNotice();
   $('#song-start').textContent = state.options.mode === 'listen'
     ? 'Escuchar la canción completa'
     : 'Tocar la canción completa';
@@ -382,9 +406,40 @@ function renderSongDetail() {
 }
 
 function transposeLabel(semitones) {
-  if (!semitones) return 'tono original';
-  const sign = semitones > 0 ? '+' : '';
-  return `${sign}${semitones} semitonos (Do suena ${noteName(60 + semitones)})`;
+  return describeTranspose(semitones, state.settings.noteNames);
+}
+
+function fullName(midi) {
+  return nameFromMidi(midi, state.settings.noteNames, true);
+}
+
+/** Dice, en una línea, qué pasó con lo que no cabe en tu teclado. */
+function renderFitNotice() {
+  const notice = $('#fit-notice');
+  if (!notice) return;
+  const fit = state.fit;
+  const range = fit && fit.range;
+  if (!range || !fit.outside) { notice.hidden = true; return; }
+  const where = `tu piano de ${range.keys} teclas (${fullName(range.lo)}–${fullName(range.hi)})`;
+  const tail = ' Se cambia en Ajustes → Tu piano.';
+  if (fit.mode === 'fold') {
+    const dropped = fit.dropped ? ` y ${fit.dropped} se quitan` : '';
+    notice.textContent = `${fit.outside} ${fit.outside === 1 ? 'nota no entra' : 'notas no entran'} en ${where}: ${fit.moved} ${fit.moved === 1 ? 'se trae' : 'se traen'} a la octava más cercana${dropped}.${tail}`;
+  } else if (fit.mode === 'skip') {
+    notice.textContent = `${fit.outside} ${fit.outside === 1 ? 'nota queda fuera' : 'notas quedan fuera'} de ${where} y ${fit.outside === 1 ? 'se omite' : 'se omiten'}.${tail}`;
+  } else {
+    notice.textContent = `${fit.outside} ${fit.outside === 1 ? 'nota queda fuera' : 'notas quedan fuera'} de ${where}. Se siguen mostrando, pero no vas a poder tocarlas.${tail}`;
+  }
+  notice.hidden = false;
+}
+
+/** Cambia el tono y vuelve a montar la canción. Se recuerda por canción. */
+function setTranspose(semitones) {
+  const value = Math.max(-24, Math.min(24, Math.round(semitones)));
+  state.options.transpose = value;
+  applyArrangement();
+  store.updateProgress(state.songBase.id, { transpose: value });
+  renderSongDetail();
 }
 
 function renderSections() {
@@ -436,7 +491,8 @@ function renderSongStats() {
 }
 
 export { $, $$, state, toast, segmented, sizeCanvas, setScreen, renderLibrary, renderCatalog, renderProgress,
-  renderSongDetail, openSong, loadSongs, allSongs, findSong, applyTranspose, fmtTime, fmtMinutes, pct,
+  renderSongDetail, openSong, loadSongs, allSongs, findSong, applyTranspose, applyArrangement,
+  userPianoRange, fmtTime, fmtMinutes, pct,
   noteName, stat, buildFromDefinition, libraryFilterRef, catalogLevelRef };
 
 function libraryFilterRef(value) { if (value !== undefined) libraryFilter = value; return libraryFilter; }
@@ -937,20 +993,11 @@ async function addSongFromBuffer(buffer, filename) {
     song = songFromMidi(buffer, filename ? filename.replace(/\.[^.]+$/, '') : 'Canción importada');
   } else {
     status.textContent = 'Escuchando el audio y buscando la melodía… esto tarda un rato.';
-    const grid = Number($('[data-grid][aria-checked="true"]', $('#transcribe-grid')).dataset.grid);
-    const bpm = Number($('#transcribe-bpm').value);
     const result = await transcribeFile(buffer, engine, {
-      bpm, quantize: grid, onProgress: importProgress,
+      bpm: transcribeBpm(), quantize: transcribeGrid(), onProgress: importProgress,
     });
-    song = buildSong({
-      title: filename ? filename.replace(/\.[^.]+$/, '') : 'Transcripción',
-      source: 'audio',
-      bpm: result.bpm,
-      meter: [4, 4],
-      difficulty: estimateDifficulty(result.notes),
-      notes: result.notes,
-    });
-    toast(`${song.notes.length} notas encontradas. Revísalas: la transcripción es beta.`, '');
+    await saveTranscription(result, filename ? filename.replace(/\.[^.]+$/, '') : 'Transcripción');
+    return;
   }
 
   await store.saveSong(song);
@@ -985,13 +1032,223 @@ async function handleFiles(files) {
   }
 }
 
+const LINK_SERVICES = [
+  {
+    name: 'YouTube',
+    test: /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i,
+    oembed: (url) => `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`,
+  },
+  {
+    name: 'Spotify',
+    test: /(^|\.)spotify\.com$/i,
+    oembed: (url) => `https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`,
+  },
+  {
+    name: 'SoundCloud',
+    test: /(^|\.)soundcloud\.com$/i,
+    oembed: (url) => `https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(url)}`,
+  },
+  { name: 'Apple Music', test: /(^|\.)music\.apple\.com$/i, oembed: null },
+];
+
+function hideRoutes() {
+  $('#link-routes').hidden = true;
+  state.link = null;
+}
+
+/**
+ * Qué hacer con un enlace pegado.
+ *
+ * Un .mid se trae y se lee. Un enlace de streaming no trae notas dentro, así
+ * que lo honesto es decirlo y llevar a los dos caminos que sí funcionan:
+ * buscar un MIDI de esa canción, o ponerla y transcribirla de oído.
+ */
+async function analyzeLink(raw) {
+  const status = $('#import-status');
+  hideRoutes();
+  $('#capture-panel').hidden = true;
+  if (!/^https?:\/\//i.test(raw)) {
+    status.textContent = 'Eso no parece una dirección web.';
+    return;
+  }
+  let url;
+  try { url = new URL(raw); } catch (e) {
+    status.textContent = 'Ese enlace no se entiende.';
+    return;
+  }
+  if (/\.midi?$/i.test(url.pathname)) {
+    await fetchMidiUrl(raw);
+    return;
+  }
+  const service = LINK_SERVICES.find((candidate) => candidate.test.test(url.hostname));
+  if (!service) {
+    status.textContent = 'No reconozco ese servicio; pruebo a traerlo como si fuera un MIDI…';
+    await fetchMidiUrl(raw);
+    return;
+  }
+  status.textContent = `Enlace de ${service.name}. Buscando el título…`;
+  const info = await resolveLinkTitle(service, raw);
+  showLinkRoutes(service, info);
+  status.textContent = '';
+}
+
+/** El título sale del oEmbed público del servicio. Sin clave y sin cuenta. */
+async function resolveLinkTitle(service, raw) {
+  if (!service.oembed) return { title: '', author: '' };
+  try {
+    const response = await fetch(service.oembed(raw));
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json();
+    return {
+      title: String(data.title || '').slice(0, 120),
+      author: String(data.author_name || '').slice(0, 80),
+    };
+  } catch (e) {
+    return { title: '', author: '' };
+  }
+}
+
+function showLinkRoutes(service, info) {
+  state.link = { service: service.name, info };
+  const head = $('#route-title');
+  head.textContent = info.title
+    ? `${service.name}: ${info.title}${info.author ? ` · ${info.author}` : ''}`
+    : `Enlace de ${service.name}. No pude leer el título, pero los dos caminos de abajo funcionan igual.`;
+
+  const search = $('#route-search');
+  search.replaceChildren();
+  const query = `${info.title} ${info.author || ''}`.trim();
+  if (query) {
+    search.append(
+      searchLink('Buscar un MIDI', `"${query}" midi`),
+      searchLink('Buscar la partitura', `${query} piano sheet music`),
+    );
+  } else {
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = 'Copia el nombre de la canción y búscalo seguido de la palabra «midi».';
+    search.append(hint);
+  }
+
+  $('#capture-tab').hidden = !AudioCapture.tabSupported;
+  $('#route-why').textContent = `Un enlace de ${service.name} no lleva las notas dentro: lleva audio, y en Spotify ni siquiera audio que el navegador pueda leer. Convertir ese audio en partitura con calidad decente necesita un modelo corriendo en un servidor, y aquí no hay servidor: ese es el precio de que la app sea tuya, gratis, sin cuenta y sin conexión.`;
+  $('#link-routes').hidden = false;
+}
+
+function searchLink(label, query) {
+  const a = document.createElement('a');
+  a.className = 'btn btn-primary';
+  a.href = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = label;
+  return a;
+}
+
+// --------------------------------------------------- escuchar y transcribir
+
+let capture = null;
+let captureTimer = 0;
+
+async function startCapture(source) {
+  if (capture) return;
+  const status = $('#import-status');
+  try {
+    capture = new AudioCapture(engine);
+    capture.onLevel = (value) => { $('#capture-level').style.width = pct(value); };
+    capture.onAuto = () => finishCapture();
+    await capture.start(source);
+    $('#capture-panel').hidden = false;
+    $('#capture-hint').textContent = source === 'tab'
+      ? 'Dale al play en la pestaña que acabas de compartir. Escucho hasta 5 minutos.'
+      : 'Pon la canción a sonar cerca del dispositivo. Escucho hasta 5 minutos.';
+    $('#capture-time').textContent = '0:00';
+    status.textContent = '';
+    clearInterval(captureTimer);
+    captureTimer = setInterval(() => {
+      if (capture) $('#capture-time').textContent = fmtTime(capture.seconds * 1000);
+    }, 300);
+  } catch (e) {
+    capture = null;
+    status.textContent = e.message;
+    toast(e.message, 'bad');
+  }
+}
+
+function cancelCapture() {
+  clearInterval(captureTimer);
+  if (capture) capture.cleanup();
+  capture = null;
+  $('#capture-panel').hidden = true;
+}
+
+async function finishCapture() {
+  if (!capture) return;
+  clearInterval(captureTimer);
+  const buffer = capture.stop();
+  capture = null;
+  $('#capture-panel').hidden = true;
+  const status = $('#import-status');
+  if (!buffer || buffer.duration < 2) {
+    status.textContent = 'Se grabó muy poco. Dale al play antes de empezar a grabar.';
+    return;
+  }
+  status.textContent = `Grabados ${fmtTime(buffer.duration * 1000)}. Buscando las notas…`;
+  try {
+    const result = await transcribeBuffer(buffer, {
+      bpm: transcribeBpm(),
+      quantize: transcribeGrid(),
+      onProgress: importProgress,
+    });
+    if (!result.notes.length) {
+      status.textContent = 'No encontré ninguna melodía clara. Esto saca una línea melódica, no una canción entera con su banda.';
+      return;
+    }
+    const name = state.link && state.link.info && state.link.info.title
+      ? state.link.info.title
+      : `De oído ${new Date().toLocaleDateString('es')}`;
+    await saveTranscription(result, name);
+  } catch (e) {
+    status.textContent = e.message;
+  } finally {
+    $('#import-progress').hidden = true;
+  }
+}
+
+function transcribeBpm() {
+  return $('#transcribe-auto').checked ? 0 : Number($('#transcribe-bpm').value);
+}
+
+function transcribeGrid() {
+  const chosen = $('[data-grid][aria-checked="true"]', $('#transcribe-grid'));
+  return chosen ? Number(chosen.dataset.grid) : 0.25;
+}
+
+/** Guarda lo transcrito y lo abre, para que se pueda tocar enseguida. */
+async function saveTranscription(result, title) {
+  const song = buildSong({
+    title: String(title).slice(0, 80),
+    source: 'audio',
+    bpm: result.bpm,
+    meter: [4, 4],
+    difficulty: estimateDifficulty(result.notes),
+    notes: result.notes,
+  });
+  await store.saveSong(song);
+  await loadSongs();
+  renderLibrary();
+  hideRoutes();
+  closeAddSheet();
+  openSong(song.id);
+  const tempo = result.detectedBpm
+    ? `tempo detectado ${result.detectedBpm} bpm`
+    : `tempo ${result.bpm} bpm`;
+  toast(`${song.notes.length} notas sacadas de oído, ${tempo}. Revísalas: esto es beta.`, '');
+}
+
 async function fetchMidiUrl(url) {
   const status = $('#import-status');
   if (!/^https?:\/\//i.test(url)) { status.textContent = 'Eso no parece una dirección web.'; return; }
-  if (/youtube\.com|youtu\.be|spotify\.com|music\.apple\.com/i.test(url)) {
-    status.textContent = 'Un enlace de YouTube, Spotify o Apple Music es audio con derechos, no una partitura: no se puede convertir desde aquí. Busca un .mid o graba el audio y usa la transcripción beta.';
-    return;
-  }
   status.textContent = 'Descargando…';
   try {
     const response = await fetch(url, { mode: 'cors' });
@@ -1040,6 +1297,34 @@ function renderSettings() {
   for (const b of $$('[data-names]', $('#set-names'))) b.setAttribute('aria-checked', String(b.dataset.names === s.noteNames));
   for (const b of $$('[data-labels]', $('#set-labels'))) b.setAttribute('aria-checked', String(b.dataset.labels === s.labels));
   for (const b of $$('[data-input]', $('#set-input'))) b.setAttribute('aria-checked', String(b.dataset.input === s.inputMode));
+  renderPianoSettings();
+}
+
+/** El panel "Tu piano": tamaño, nota más grave y qué hacer con lo que no cabe. */
+function renderPianoSettings() {
+  const host = $('#set-piano');
+  if (!host) return;
+  if (!host.children.length) {
+    for (const size of PIANO_SIZES) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('role', 'radio');
+      button.dataset.piano = String(size.keys);
+      button.textContent = size.label;
+      host.appendChild(button);
+    }
+  }
+  const keys = Number(state.settings.pianoKeys) || 0;
+  for (const b of $$('[data-piano]', host)) b.setAttribute('aria-checked', String(Number(b.dataset.piano) === keys));
+  for (const b of $$('[data-outofrange]', $('#set-outofrange'))) {
+    b.setAttribute('aria-checked', String(b.dataset.outofrange === state.settings.outOfRange));
+  }
+  const range = userPianoRange();
+  $('#piano-low-field').hidden = !range;
+  $('#out-of-range-field').hidden = !range;
+  if (range) {
+    $('#piano-range-label').textContent = `${fullName(range.lo)} – ${fullName(range.hi)}`;
+  }
 }
 
 async function doExport() {
@@ -1073,7 +1358,9 @@ function slug(text) {
 
 export { startPlay, closePlayer, practiceWorstBars, handleNoteOn, handleNoteOff,
   setInputMode, openAddSheet, closeAddSheet, handleFiles, fetchMidiUrl, renderSettings, doExport,
-  exportCurrentSongAsMidi, toggleRecording, updateFreeLabels, transposeLabel, download, slug };
+  exportCurrentSongAsMidi, toggleRecording, updateFreeLabels, transposeLabel, download, slug,
+  analyzeLink, hideRoutes, startCapture, cancelCapture, finishCapture, setTranspose,
+  renderPianoSettings, renderFitNotice, fullName };
 
 function setPlayerHands(value) {
   for (const b of $$('[data-hands]', $('#player-hands'))) b.setAttribute('aria-checked', String(b.dataset.hands === value));
