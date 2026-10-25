@@ -28,6 +28,7 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
 | 2026-10-25 | Tu piano (ajustes) | hecho | 25 a 88 teclas, nota más grave ajustable por octavas, y qué hacer con lo que no cabe: omitirlo o plegarlo a la octava más cercana. El detalle de la canción dice cuántas notas se movieron. |
 | 2026-10-25 | Tono por octavas | hecho | ±24 semitonos con botones de octava y de semitono, explicado en palabras, recordado por canción. |
 | 2026-10-25 | S04 Enlaces de streaming | **parcial, a propósito** | Reconoce YouTube, Spotify y SoundCloud, lee el título por su oEmbed público y lleva a los dos caminos que sí funcionan. La conversión directa desde el enlace no se puede hacer sin servidor; está dicho en la propia pantalla. |
+| 2026-10-25 | Transcripción de acordes | hecho | Estimador de varias frecuencias por saliencia armónica con resta iterativa. 28 de 32 notas en el banco de acordes, cero inventadas. Elegible junto al modo melodía. |
 | 2026-10-25 | Teclado de piano real | hecho | Posiciones y proporciones reales, blancas recortadas, deslizable, ampliable y con seguimiento automático. |
 | 2026-10-25 | Ajustes de las notas que caen | hecho | Anticipación, teclas a la vista, alto del teclado, paleta de manos (con una apta para daltonismo), rejilla de compases y brillo. |
 | 2026-10-25 | Micrófono fiable | hecho | Autocorrelación en dos pasadas, sensibilidad ajustable y lo que oye, en pantalla. |
@@ -63,6 +64,23 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
   servicio (sin clave, sin cuenta), ofrecer la búsqueda de un MIDI —que es lo exacto— y
   grabar la canción mientras suena para sacarla de oído. De un enlace pegado a algo que
   tocar hay dos toques.
+
+## Acordes: hasta dónde llega esto sin un servidor
+
+El transcriptor sacaba una sola línea melódica. Ahora hay un segundo método que saca varias
+notas a la vez: por cada instante calcula, para cada nota posible, cuánta señal hay compatible
+con que esa nota suene —sumando su fundamental y siete armónicos, con peso decreciente—, se
+queda con la más clara, **borra del espectro lo que esa nota explica**, y repite.
+
+Medido sobre diez acordes sintéticos conocidos: **28 de 32 notas, sin inventarse ninguna**.
+Las cuatro que faltan son el límite real del método, no un descuido: una nota tapada por
+otra una octava o una quinta justo encima comparte con ella todos sus armónicos, así que al
+restar la primera desaparece la segunda. Eso lo resuelve un modelo entrenado, que es lo que
+usa la app original, y que necesita un servidor.
+
+Dos trampas costaron la mitad del trabajo y las dos están comentadas en el código: el vecino
+de semitono, que se cuela con el ruido que deja la resta, y el fantasma por debajo del bajo,
+que "explica" sus propios armónicos con lo que ya suena.
 
 ## El teclado tenía que ser un piano, no una rejilla
 

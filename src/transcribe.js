@@ -404,17 +404,233 @@ async function decodeToMono(arrayBuffer, engine) {
 }
 
 /** Cuánto va a tardar, más o menos, para poder decirlo antes de empezar. */
-export function estimateWork(seconds) {
-  return Math.max(1, Math.round(seconds * 0.12));
+export function estimateWork(seconds, mode = 'melodia') {
+  return Math.max(1, Math.round(seconds * (mode === 'acordes' ? 0.35 : 0.12)));
 }
 
-/** Lee un archivo de audio (mp3, m4a, wav, ogg, flac...) y lo transcribe. */
+/** Elige el método y transcribe. Es el único sitio desde el que se llama. */
+export async function transcribeAny(samples, rate, duration, options = {}) {
+  return options.mode === 'acordes'
+    ? transcribePolyphonic(samples, rate, duration, options)
+    : transcribeSamples(samples, rate, duration, options);
+}
+
+/**
+ * Lee un archivo de audio (mp3, m4a, wav, ogg, flac...) y lo transcribe.
+ * `mode`: 'acordes' saca varias notas a la vez, 'melodia' solo una línea.
+ */
 export async function transcribeFile(arrayBuffer, engine, options = {}) {
   const { samples, duration } = await decodeToMono(arrayBuffer, engine);
   if (!samples.length) throw new Error('Ese archivo no tiene audio dentro.');
-  const result = await transcribeSamples(samples, TARGET_RATE, duration, options);
+  const result = await transcribeAny(samples, TARGET_RATE, duration, options);
   if (!result.notes.length) {
     throw new Error('No se encontró ninguna melodía clara. Esto funciona con una sola línea melódica.');
   }
   return result;
+}
+
+// ------------------------------------------------ varias notas a la vez
+
+import { spectrum, midiToFreq } from './pitch.js';
+
+const POLY_FRAME = 4096;   // 256 ms a 16 kHz: hace falta para separar graves
+const POLY_HOP = 512;      // 32 ms entre lecturas
+const POLY_MIN = 28;       // Mi1
+const POLY_MAX = 96;       // Do7
+const HARMONICS = 8;
+const HARMONIC_WEIGHT = Array.from({ length: HARMONICS }, (_, i) => 1 / Math.pow(i + 1, 0.85));
+
+/**
+ * Cuánta señal hay compatible con que suene la nota `midi`.
+ *
+ * No basta mirar su frecuencia: en un piano el fundamental suele ser más flojo
+ * que sus armónicos. Se suma lo que hay en el fundamental y en los siete
+ * armónicos siguientes, cada uno con menos peso. Esa suma —la "saliencia"— es
+ * alta para las notas que de verdad suenan y baja para las que no.
+ */
+function salience(mag, midi, binHz) {
+  const f0 = midiToFreq(midi);
+  let total = 0;
+  for (let h = 1; h <= HARMONICS; h++) {
+    const target = (f0 * h) / binHz;
+    if (target >= mag.length - 1) break;
+    // Media ventana de semitono a cada lado: la afinación nunca es exacta.
+    const span = Math.max(1, Math.round(target * 0.029));
+    let peak = 0;
+    for (let b = Math.max(0, Math.round(target) - span); b <= Math.min(mag.length - 1, Math.round(target) + span); b++) {
+      if (mag[b] > peak) peak = mag[b];
+    }
+    total += peak * HARMONIC_WEIGHT[h - 1];
+  }
+  return total;
+}
+
+/** Quita del espectro lo que explica una nota ya aceptada. */
+function subtractHarmonics(mag, midi, binHz) {
+  const f0 = midiToFreq(midi);
+  let fundamental = 0;
+  for (let h = 1; h <= HARMONICS; h++) {
+    const target = (f0 * h) / binHz;
+    if (target >= mag.length - 1) break;
+    const span = Math.max(1, Math.round(target * 0.029));
+    const from = Math.max(0, Math.round(target) - span);
+    const to = Math.min(mag.length - 1, Math.round(target) + span);
+    let peak = 0;
+    for (let b = from; b <= to; b++) if (mag[b] > peak) peak = mag[b];
+    if (h === 1) fundamental = peak;
+    const expected = Math.min(peak, (fundamental || peak) * HARMONIC_WEIGHT[h - 1] * 1.3);
+    for (let b = from; b <= to; b++) mag[b] = Math.max(0, mag[b] - expected * 0.9);
+  }
+}
+
+/**
+ * Las notas que suenan en un instante: hasta `maxNotes`, de más a menos clara.
+ *
+ * Dos trampas conocidas de este método, y lo que se hace con cada una:
+ *
+ * - **El vecino de semitono.** Al restar una nota queda ruido alrededor y el
+ *   semitono de al lado se cuela. En música real dos semitonos juntos son
+ *   raros, y el falso positivo molesta más que el raro que se pierde, así que
+ *   se bloquean.
+ * - **El subarmónico de abajo.** Una nota una octava o una docena por debajo
+ *   "explica" sus propios armónicos con lo que ya suena, y aparece de la nada.
+ *   Se le exige mucha más evidencia que a las demás.
+ */
+function framePitches(mag, binHz, maxNotes, floor) {
+  const working = Float32Array.from(mag);
+  const found = [];
+  const blocked = new Set();
+  let firstScore = 0;
+
+  for (let round = 0; round < maxNotes; round++) {
+    let best = 0;
+    let bestScore = 0;
+    for (let midi = POLY_MIN; midi <= POLY_MAX; midi++) {
+      if (blocked.has(midi)) continue;
+      let score = salience(working, midi, binHz);
+      // Candidata por debajo de algo ya aceptado, con la octava o la docena
+      // justo encima: casi siempre es un fantasma del bajo.
+      if (found.some((f) => f.midi - midi === 12 || f.midi - midi === 19 || f.midi - midi === 24)) {
+        score *= 0.45;
+      }
+      // Y lo que aparece muy por debajo de un bajo ya aceptado tampoco suele
+      // existir: el bajo de verdad se oye primero, no el cuarto.
+      if (found.length && midi < Math.min(...found.map((f) => f.midi)) - 6) {
+        score *= 0.5;
+      }
+      if (score > bestScore) { bestScore = score; best = midi; }
+    }
+    if (!best) break;
+    if (!round) firstScore = bestScore;
+    // Las notas de un acorde pesan parecido; lo que queda muy por debajo de la
+    // más clara es residuo, no música.
+    if (bestScore < Math.max(floor, firstScore * 0.3)) break;
+
+    found.push({ midi: best, score: bestScore });
+    blocked.add(best);
+    blocked.add(best - 1);
+    blocked.add(best + 1);
+    subtractHarmonics(working, best, binHz);
+  }
+  return found;
+}
+
+/**
+ * Transcripción polifónica: saca acordes y bajo, no solo la melodía.
+ *
+ * Es un estimador de varias frecuencias por saliencia armónica con resta
+ * iterativa: se queda con la nota más clara, borra del espectro lo que esa
+ * nota explica, y repite. No es un modelo entrenado —eso vive en un servidor y
+ * aquí no hay servidor— pero sí oye acordes, que es lo que el detector de
+ * melodía no podía hacer.
+ */
+export async function transcribePolyphonic(mono, rate, duration, options = {}) {
+  const quantize = options.quantize != null ? options.quantize : 0.25;
+  const maxNotes = options.maxNotes || 5;
+  const onProgress = options.onProgress || (() => {});
+  const binHz = rate / POLY_FRAME;
+  const frames = Math.max(0, Math.floor((mono.length - POLY_FRAME) / POLY_HOP));
+  const secondsPerFrame = POLY_HOP / rate;
+  const yieldEvery = frames > 4000 ? 64 : 16;
+
+  // Primera vuelta: energía por tramo, para saber dónde hay música.
+  const energies = new Float32Array(frames);
+  let peakEnergy = 1e-9;
+  for (let f = 0; f < frames; f++) {
+    let sum = 0;
+    const start = f * POLY_HOP;
+    for (let i = 0; i < POLY_FRAME; i += 4) sum += mono[start + i] * mono[start + i];
+    energies[f] = Math.sqrt(sum / (POLY_FRAME / 4));
+    if (energies[f] > peakEnergy) peakEnergy = energies[f];
+  }
+  const energyGate = Math.max(0.004, peakEnergy * 0.06);
+
+  const active = new Map(); // midi -> { startFrame, lastFrame, score }
+  const segments = [];
+  const close = (midi, entry, endFrame) => {
+    const length = endFrame - entry.startFrame;
+    if (length >= 3) segments.push({ midi, startFrame: entry.startFrame, frames: length, score: entry.score });
+  };
+
+  for (let f = 0; f < frames; f++) {
+    if (f % yieldEvery === 0) {
+      onProgress(f / Math.max(1, frames));
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    if (energies[f] < energyGate) {
+      for (const [midi, entry] of active) close(midi, entry, f);
+      active.clear();
+      continue;
+    }
+    const mag = spectrum(mono.subarray(f * POLY_HOP, f * POLY_HOP + POLY_FRAME), POLY_FRAME);
+    let frameTotal = 0;
+    for (let i = 0; i < mag.length; i++) frameTotal += mag[i];
+    const floor = (frameTotal / mag.length) * 8;
+
+    const pitches = framePitches(mag, binHz, maxNotes, floor);
+    const seen = new Set(pitches.map((p) => p.midi));
+    for (const { midi, score } of pitches) {
+      const entry = active.get(midi);
+      if (entry) {
+        entry.lastFrame = f;
+        entry.score = Math.max(entry.score, score);
+      } else {
+        active.set(midi, { startFrame: f, lastFrame: f, score });
+      }
+    }
+    for (const [midi, entry] of [...active]) {
+      // Un hueco de un solo tramo no corta la nota: el espectro parpadea.
+      if (!seen.has(midi) && f - entry.lastFrame > 1) {
+        close(midi, entry, entry.lastFrame + 1);
+        active.delete(midi);
+      }
+    }
+  }
+  for (const [midi, entry] of active) close(midi, entry, frames);
+
+  const detectedBpm = estimateTempo(energies, secondsPerFrame);
+  const bpm = options.bpm ? Math.max(30, Math.min(220, options.bpm)) : (detectedBpm || 100);
+  const beatsPerSecond = bpm / 60;
+
+  const notes = [];
+  for (const seg of segments) {
+    let t = seg.startFrame * secondsPerFrame * beatsPerSecond;
+    let d = seg.frames * secondsPerFrame * beatsPerSecond;
+    if (quantize > 0) {
+      t = Math.round(t / quantize) * quantize;
+      d = Math.max(quantize, Math.round(d / quantize) * quantize);
+    }
+    notes.push({ t, d, midi: seg.midi, vel: 0.75, hand: 'R' });
+  }
+  notes.sort((a, b) => a.t - b.t || a.midi - b.midi);
+  if (notes.length) {
+    const offset = notes[0].t;
+    for (const n of notes) n.t -= offset;
+  }
+  // La izquierda se queda lo grave cuando hay suficiente material abajo.
+  const low = notes.filter((n) => n.midi < 55).length;
+  if (low > notes.length * 0.2) for (const n of notes) if (n.midi < 55) n.hand = 'L';
+
+  onProgress(1);
+  return { notes, bpm, detectedBpm, frames, seconds: duration };
 }

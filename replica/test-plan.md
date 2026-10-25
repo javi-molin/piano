@@ -4,9 +4,9 @@ Build: rama `jm/epic-clarke-xzil2q` · Fecha: 2026-10-25 · Entorno: Chromium he
 servidor estático del propio proyecto, y Node para el núcleo.
 
 ```
-node tests/engine.test.mjs    54 pruebas del núcleo (DSL, MIDI, teclado, tutor, tu piano, tempo, afinación, micrófono)
+node tests/engine.test.mjs    59 pruebas del núcleo (DSL, MIDI, teclado, tutor, tu piano, tempo, afinación, micrófono, acordes)
 node tests/tokens.test.mjs    los tokens de diseño no se separan entre sus tres copias
-node tests/e2e.mjs            36 recorridos en un navegador de verdad
+node tests/e2e.mjs            37 recorridos en un navegador de verdad
 ```
 
 | caso | flujo | tipo | pasos | esperado | auto | resultado |
@@ -63,6 +63,11 @@ node tests/e2e.mjs            36 recorridos en un navegador de verdad
 | TIT-2 | importar | negativo: ilegible | bytes que no son nada | se queda el nombre del archivo | e2e | pasa |
 | TIT-3 | importar | feliz | renombrar lo importado | cambia y sobrevive a recargar; el catálogo no se renombra | e2e | pasa |
 | UXD-1 | pantalla | feliz | cambiar paleta, rejilla, brillo y seguimiento | se guardan y la canción se sigue dibujando | e2e | pasa |
+| ACO-1 | acordes | feliz | tres tríadas seguidas | las nueve notas, exactas | unit | pasa |
+| ACO-2 | acordes | negativo | cuatro acordes con bajo | ni una nota inventada, y 80 % o más de acierto | unit | pasa |
+| ACO-3 | acordes | borde | una melodía sola por el modo acordes | sale igual de bien | unit | pasa |
+| ACO-4 | acordes | negativo | silencio | ningún acorde | unit | pasa |
+| ACO-5 | acordes | — | elegir el modo al importar | se puede, y el mp3 se transcribe en los dos | e2e | pasa |
 | MIC-1 | micrófono | manual | elegir micrófono en Ajustes y tocar un piano | las teclas se iluminan | manual | pendiente de probar con un piano real |
 | CAP-2 | grabar | manual | poner una canción en un altavoz y grabarla entera | sale una melodía reconocible | manual | pendiente de probar con música real |
 | CAP-3 | grabar | manual | capturar el sonido de una pestaña en un portátil | graba lo que suena en esa pestaña | manual | pendiente; en el iPad no existe y el botón no sale |

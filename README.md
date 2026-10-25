@@ -74,11 +74,11 @@ compases se te escapa, y un botón te mete a practicar justo esos.
 - **Pega un enlace de YouTube, Spotify o SoundCloud** y Cascada lee el título y te lleva a
   los dos caminos que sí funcionan (ver abajo).
 - **Sube audio** (`.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac`), uno o varios de golpe, **sin
-  límite de peso ni de duración**. La transcripción está **en beta**: escucha y escribe las
-  notas, detectando el tempo solo. Funciona con **una melodía sola** —voz, silbido, flauta,
-  una línea de piano— y se pierde con acordes o con una banda entera. Lo único que crece
-  con la duración es el tiempo: unos 12 segundos de análisis por minuto de audio, con su
-  barra de progreso.
+  límite de peso ni de duración**. La transcripción está **en beta** y tiene dos modos:
+  **acordes y melodía**, que saca varias notas a la vez, y **solo la melodía**, más rápido
+  y más limpio con una sola línea. El tempo lo detecta sola. Lo único que crece con la
+  duración es el tiempo: unos 12 segundos de análisis por minuto de audio (el triple en
+  modo acordes), con su barra de progreso.
 - **Graba** lo que improvises en Juego libre y se guarda como una canción más.
 - **Exporta** toda tu biblioteca a un `.json` desde Ajustes. Como no hay nube, esa es la
   forma de llevártela a otro dispositivo o de no perderla si borras los datos de Safari.
@@ -143,8 +143,8 @@ python3 -m http.server 8080     # o: npm start
 ```
 
 ```bash
-npm test          # 43 pruebas del núcleo + los tokens de diseño (solo Node)
-npm run test:e2e  # 28 recorridos en Chromium (necesita playwright)
+npm test          # 59 pruebas del núcleo + los tokens de diseño (solo Node)
+npm run test:e2e  # 37 recorridos en Chromium (necesita playwright)
 npm run icons     # regenera los iconos desde los tokens
 ```
 
@@ -158,8 +158,9 @@ src/score.js           modelo musical: DSL propio, digitación, secciones, tu te
 src/songs.js           el catálogo de dominio público
 src/midi.js            lector y escritor de MIDI estándar, y entrada Web MIDI
 src/audio.js           piano sintetizado (sin un solo byte de sample)
-src/mic.js             notas por micrófono: picos del espectro sin armónicos
-src/transcribe.js      audio a notas con YIN, tempo automático y grabación (beta)
+src/pitch.js           afinación: YIN en dos pasadas y FFT, compartido
+src/mic.js             notas por micrófono, de Mi1 a Do7, una a la vez
+src/transcribe.js      audio a notas: melodía o acordes, tempo automático, grabación (beta)
 src/keyboard.js        geometría, dibujo y multitouch del teclado
 src/roll.js            el piano-roll que cae
 src/player.js          el tutor: modo espera, puntuación, bucle
@@ -189,8 +190,11 @@ Dicho antes de que lo descubras tú:
 - **No convierte una canción de Spotify o YouTube en un tutorial de un toque.** Eso necesita
   un modelo de transcripción corriendo en un servidor, y aquí no hay servidor. Lo que sí
   hace: leer el título del enlace, llevarte a buscar su MIDI —que es exacto— o grabarla
-  mientras suena y sacarla de oído. La transcripción propia es monofónica y está marcada
-  como beta en la propia pantalla.
+  mientras suena y sacarla de oído.
+- **La transcripción propia oye acordes, pero no es un modelo entrenado.** Sobre un banco de
+  diez acordes conocidos saca 28 de 32 notas sin inventarse ninguna. Las que falla son el
+  límite del método: una nota tapada por otra una octava o una quinta justo encima comparte
+  con ella todos sus armónicos y desaparece. Para exactitud, importa un MIDI.
 - **No tiene catálogo de canciones conocidas.** Serían licencias. El catálogo es de dominio
   público y lo tuyo lo pones tú.
 - **No hay cuenta ni nube.** Si borras los datos del navegador sin exportar, se va.

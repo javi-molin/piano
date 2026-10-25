@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { buildSong, parseLine, nameFromMidi, midiFromName, transposeSong, autoSections,
   fitToRange, pianoRange, PIANO_SIZES, notesOutside, describeTranspose } from '../src/score.js';
 import { songToMidiBytes, songFromMidi, estimateDifficulty } from '../src/midi.js';
-import { estimateTempo } from '../src/transcribe.js';
+import { estimateTempo, transcribePolyphonic, transcribeSamples, estimateWork } from '../src/transcribe.js';
 import { detectPitch, midiToFreq, freqToMidi, yin, rms, spectrum } from '../src/pitch.js';
 import { MicInput } from '../src/mic.js';
 import { buildLayout, wholeOctaves, keyAt, computerKeyToMidi,
@@ -282,6 +282,97 @@ test('YIN coge el primer mínimo, no el más profundo', () => {
   // Con armónicos fuertes, el mínimo más profundo cae en el doble de periodo.
   const [freq] = yin(tone(64, { rate: 22050, samples: 2048 }), 22050, { f0min: 50, f0max: 1100 });
   assert.equal(Math.round(freqToMidi(freq)), 64);
+});
+
+// ------------------------------------------------ acordes, no solo melodía
+/** Un acorde de piano de mentira, con el decaimiento de una cuerda pulsada. */
+function chordSamples(midis, seconds, rate = 16000) {
+  const n = Math.floor(rate * seconds);
+  const out = new Float32Array(n);
+  for (const midi of midis) {
+    const f = midiToFreq(midi);
+    for (let i = 0; i < n; i++) {
+      const t = i / rate;
+      const envelope = Math.exp(-1.1 * t);
+      out[i] += envelope * (
+        0.5 * Math.sin(2 * Math.PI * f * t)
+        + 0.3 * Math.sin(4 * Math.PI * f * t)
+        + 0.18 * Math.sin(6 * Math.PI * f * t)
+        + 0.09 * Math.sin(8 * Math.PI * f * t)
+        + 0.04 * Math.sin(10 * Math.PI * f * t)
+      ) / Math.sqrt(midis.length);
+    }
+  }
+  return out;
+}
+
+function joinChords(chords, seconds = 1, rate = 16000) {
+  const parts = chords.map((c) => chordSamples(c, seconds, rate));
+  const total = parts.reduce((sum, p) => sum + p.length, 0);
+  const mono = new Float32Array(total);
+  let offset = 0;
+  for (const part of parts) { mono.set(part, offset); offset += part.length; }
+  return { mono, duration: total / rate };
+}
+
+/** Qué notas salieron en cada acorde, agrupadas por su hueco de tiempo. */
+function pitchesBySlot(notes) {
+  const slots = new Map();
+  for (const n of notes) {
+    const slot = Math.round(n.t);
+    if (!slots.has(slot)) slots.set(slot, new Set());
+    slots.get(slot).add(n.midi);
+  }
+  return slots;
+}
+
+test('saca las tres notas de un acorde, no solo la de arriba', async () => {
+  const chords = [[60, 64, 67], [62, 65, 69], [64, 67, 71]];
+  const { mono, duration } = joinChords(chords);
+  const result = await transcribePolyphonic(mono, 16000, duration, { bpm: 60, quantize: 0.5 });
+  const slots = pitchesBySlot(result.notes);
+  chords.forEach((expected, i) => {
+    const got = [...(slots.get(i) || [])].sort((a, b) => a - b);
+    assert.deepEqual(got, expected, `acorde ${i}: esperaba ${expected} y salió ${got}`);
+  });
+});
+
+test('no se inventa notas que no están', async () => {
+  const chords = [[60, 64, 67], [48, 55, 64], [45, 52, 57, 61], [53, 57, 60, 65]];
+  const { mono, duration } = joinChords(chords);
+  const result = await transcribePolyphonic(mono, 16000, duration, { bpm: 60, quantize: 0.5 });
+  const slots = pitchesBySlot(result.notes);
+  let spurious = 0;
+  let hit = 0;
+  chords.forEach((expected, i) => {
+    const want = new Set(expected);
+    for (const midi of slots.get(i) || []) {
+      if (want.has(midi)) hit += 1;
+      else spurious += 1;
+    }
+  });
+  assert.equal(spurious, 0, `se inventó ${spurious} notas`);
+  const total = chords.reduce((sum, c) => sum + c.length, 0);
+  assert.ok(hit >= total * 0.8, `acierto bajo: ${hit} de ${total}`);
+});
+
+test('el modo acordes también saca bien una melodía sola', async () => {
+  const notes = [[60], [64], [67], [72]];
+  const { mono, duration } = joinChords(notes);
+  const result = await transcribePolyphonic(mono, 16000, duration, { bpm: 60, quantize: 0.5 });
+  const got = [...new Set(result.notes.map((n) => n.midi))].sort((a, b) => a - b);
+  assert.deepEqual(got, [60, 64, 67, 72]);
+});
+
+test('el silencio no produce acordes', async () => {
+  const quiet = new Float32Array(16000 * 2);
+  for (let i = 0; i < quiet.length; i++) quiet[i] = (Math.random() * 2 - 1) * 0.0008;
+  const result = await transcribePolyphonic(quiet, 16000, 2, { bpm: 60 });
+  assert.equal(result.notes.length, 0);
+});
+
+test('buscar acordes se avisa como más lento que buscar melodía', () => {
+  assert.ok(estimateWork(120, 'acordes') > estimateWork(120, 'melodia'));
 });
 
 // --------------------------------------------------------------- micrófono

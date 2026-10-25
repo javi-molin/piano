@@ -180,6 +180,7 @@ function wireAddSheet() {
     $('#transcribe-bpm-out').textContent = ev.target.value;
   });
   segmented('#transcribe-grid', 'grid', () => {});
+  segmented('#transcribe-mode', 'mode2', () => {});
 }
 
 function wireFree() {

@@ -514,6 +514,14 @@
           sola</b> —voz, silbido, flauta, violín, una línea de piano— y se pierde con acordes o
           con toda una banda sonando. Si quieres exactitud, importa un MIDI.
         </p>
+        <div class="field">
+          <span class="label">Qué buscar</span>
+          <div class="segmented small" id="transcribe-mode" role="radiogroup" aria-label="Qué buscar en el audio">
+            <button type="button" role="radio" aria-checked="true" data-mode2="acordes">Acordes y melodía</button>
+            <button type="button" role="radio" aria-checked="false" data-mode2="melodia">Solo la melodía</button>
+          </div>
+          <p class="hint"><b>Acordes y melodía</b> saca varias notas a la vez; tarda unas tres veces más y de vez en cuando se come una nota tapada por otra (una octava o una quinta justo encima la esconden). <b>Solo la melodía</b> es más rápido y más limpio cuando hay una sola línea.</p>
+        </div>
         <div class="field row">
           <label class="switch"><input type="checkbox" id="transcribe-auto" checked> <span>Detectar el tempo solo</span></label>
         </div>

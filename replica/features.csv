@@ -5,7 +5,7 @@ Buscar y filtrar canciones,biblioteca,should,yes,yes,
 Catalogo listo para tocar por dificultad,catalogo,must,yes,yes,"14 piezas de dominio publico, arregladas aqui"
 Anadir cancion desde archivo,anadir,must,yes,yes,MIDI exacto; audio mp3/m4a/wav/ogg/flac sin limite de tamano; varios de golpe; y copias .json
 Anadir cancion pegando un enlace,anadir,must,yes,partial,"reconoce YouTube/Spotify/SoundCloud, lee el titulo por oEmbed publico y lleva a buscar un MIDI o a transcribir de oido; el original lo convierte en su servidor"
-Conversion automatica de audio a notas,anadir,must,yes,partial,"transcriptor propio en el navegador con tempo automatico, sin limite de peso ni de duracion, desde mp3/m4a/wav/ogg/flac o grabando lo que suena; monofonico y marcado beta"
+Conversion automatica de audio a notas,anadir,must,yes,partial,"dos modos propios en el navegador: acordes por saliencia armonica (28 de 32 notas en el banco, cero inventadas) o solo melodia; tempo automatico; sin limite de peso. El original usa un modelo entrenado en servidor"
 Notas que caen sobre el teclado,reproductor,must,yes,yes,
 Teclado en pantalla tocable,reproductor,must,yes,yes,"proporciones de piano real, deslizable y ampliable, con seguimiento automatico; multitouch y teclado del ordenador"
 Modo espera: la cancion espera tu nota,reproductor,must,yes,yes,"ademas, si te adelantas la cancion te sigue"
@@ -57,3 +57,4 @@ Ajustar cuanto se ve venir y el alto del teclado,mejora,could,no,yes,
 Paleta de manos apta para daltonismo,mejora,could,no,yes,y una de alto contraste
 Ver en pantalla la nota que oye el microfono,mejora,could,no,yes,"con la desviacion en centesimas, para comprobarlo sin fiarse"
 Renombrar una cancion importada,mejora,could,no,yes,util cuando el titulo del archivo viene en otro idioma
+"Transcribir acordes, no solo la melodia",mejora,could,no,yes,"estimador de varias frecuencias con resta iterativa, en el propio navegador"

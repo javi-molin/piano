@@ -18,7 +18,7 @@ Not shippable yet: 3 must-have features are not done.
 
 ## Missing, in build order
 - [must] anadir: Anadir cancion pegando un enlace, partial  (reconoce YouTube/Spotify/SoundCloud, lee el titulo por oEmbed publico y lleva a buscar un MIDI o a transcribir de oido; el original lo convierte en su servidor)
-- [must] anadir: Conversion automatica de audio a notas, partial  (transcriptor propio en el navegador con tempo automatico, sin limite de peso ni de duracion, desde mp3/m4a/wav/ogg/flac o grabando lo que suena; monofonico y marcado beta)
+- [must] anadir: Conversion automatica de audio a notas, partial  (dos modos propios en el navegador: acordes por saliencia armonica (28 de 32 notas en el banco, cero inventadas) o solo melodia; tempo automatico; sin limite de peso. El original usa un modelo entrenado en servidor)
 - [must] entrada: Tocar con teclado MIDI, partial  (Web MIDI donde exista; Safari en iPad no lo trae y lo dice)
 - [could] ajustes: Varios idiomas, no  (solo espanol)
 - [could] progreso: Recordatorio de racha, no  (haria falta notificaciones; en iOS una PWA no las da sin mas)
@@ -51,3 +51,4 @@ Not shippable yet: 3 must-have features are not done.
 - Paleta de manos apta para daltonismo
 - Ver en pantalla la nota que oye el microfono
 - Renombrar una cancion importada
+- Transcribir acordes, no solo la melodia

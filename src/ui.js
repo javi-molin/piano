@@ -6,7 +6,7 @@ import { CATALOG, applyWrittenFingers } from './songs.js';
 import { engine, TIMBRE_NAMES } from './audio.js';
 import { songFromMidi, songToMidiBytes, MidiInput, estimateDifficulty } from './midi.js';
 import { MicInput } from './mic.js';
-import { transcribeFile, transcribeSamples, AudioCapture, estimateWork } from './transcribe.js';
+import { transcribeFile, transcribeAny, AudioCapture, estimateWork } from './transcribe.js';
 import { buildLayout, wholeOctaves, drawKeyboard, attachPointerInput, computerKeyToMidi,
   whiteWidthFor, clampOffset, offsetToCenter, countWhites, drawPanStrip } from './keyboard.js';
 import { drawRoll, keyboardMarks, barHeatmap, upcomingMidis } from './roll.js';
@@ -1075,7 +1075,7 @@ async function addSongFromBuffer(buffer, filename, { reveal = true } = {}) {
   } else {
     status.textContent = 'Leyendo el audio y buscando la melodía. En canciones largas tarda; no cierres esta pantalla.';
     const result = await transcribeFile(buffer, engine, {
-      bpm: transcribeBpm(), quantize: transcribeGrid(), onProgress: importProgress,
+      bpm: transcribeBpm(), quantize: transcribeGrid(), mode: transcribeMode(), onProgress: importProgress,
     });
     await saveTranscription(result, filename ? filename.replace(/\.[^.]+$/, '') : 'Transcripción', { reveal });
     return;
@@ -1281,11 +1281,12 @@ async function finishCapture() {
     return;
   }
   status.textContent = `Grabados ${fmtTime(recording.duration * 1000)}. `
-    + `Buscando las notas: unos ${estimateWork(recording.duration)} segundos.`;
+    + `Buscando las notas: unos ${estimateWork(recording.duration, transcribeMode())} segundos.`;
   try {
-    const result = await transcribeSamples(recording.samples, recording.rate, recording.duration, {
+    const result = await transcribeAny(recording.samples, recording.rate, recording.duration, {
       bpm: transcribeBpm(),
       quantize: transcribeGrid(),
+      mode: transcribeMode(),
       onProgress: importProgress,
     });
     if (!result.notes.length) {
@@ -1305,6 +1306,11 @@ async function finishCapture() {
 
 function transcribeBpm() {
   return $('#transcribe-auto').checked ? 0 : Number($('#transcribe-bpm').value);
+}
+
+function transcribeMode() {
+  const chosen = $('[data-mode2][aria-checked="true"]', $('#transcribe-mode'));
+  return chosen ? chosen.dataset.mode2 : 'acordes';
 }
 
 function transcribeGrid() {

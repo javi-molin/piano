@@ -576,6 +576,23 @@ test('importar dos archivos de golpe guarda los dos y abre solo el último', asy
   await page.close();
 });
 
+test('se puede elegir entre buscar acordes o solo la melodía', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.click('#add-sheet details summary');
+  assert(await page.locator('[data-mode2="acordes"]').isVisible(), 'no se puede elegir el modo');
+  equal(await page.locator('[data-mode2="acordes"]').getAttribute('aria-checked'), 'true', 'acordes debería venir puesto');
+  await page.click('[data-mode2="melodia"]');
+  equal(await page.locator('[data-mode2="melodia"]').getAttribute('aria-checked'), 'true');
+  // Y en ese modo el mp3 de prueba se transcribe igual de bien.
+  await page.setInputFiles('#file-input', ctx.mp3Path);
+  await page.waitForSelector('[data-screen="song"]:not([hidden])', { timeout: 60000 });
+  const notes = await page.evaluate(() => window.__cascada.state.song.notes.map((n) => n.midi));
+  assert(notes.includes(60) && notes.includes(72), `melodía incompleta: ${notes.join(' ')}`);
+  await page.close();
+});
+
 test('el selector de archivos acepta mp3 y compañía', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
   await page.click('[data-tab="library"]');
