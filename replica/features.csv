@@ -1,0 +1,50 @@
+feature,area,priority,original,clone,notes
+Biblioteca de canciones propias con progreso,biblioteca,must,yes,yes,
+Fijar canciones arriba,biblioteca,should,yes,yes,
+Buscar y filtrar canciones,biblioteca,should,yes,yes,
+Catalogo listo para tocar por dificultad,catalogo,must,yes,yes,"14 piezas de dominio publico, arregladas aqui"
+Anadir cancion desde archivo,anadir,must,yes,yes,MIDI exacto; tambien audio y copias .json
+Anadir cancion pegando un enlace,anadir,must,yes,partial,solo enlaces directos a un .mid y si el servidor lo permite; el original acepta links de streaming
+Conversion automatica de audio a notas,anadir,must,yes,partial,"transcriptor propio en el navegador, monofonico y marcado beta; el original usa un modelo en servidor"
+Notas que caen sobre el teclado,reproductor,must,yes,yes,
+Teclado en pantalla tocable,reproductor,must,yes,yes,"multitouch, y tambien con el teclado del ordenador"
+Modo espera: la cancion espera tu nota,reproductor,must,yes,yes,"ademas, si te adelantas la cancion te sigue"
+Separacion de manos izquierda y derecha,reproductor,must,yes,yes,la mano que no practicas la toca la app
+Indicacion de dedo por nota,reproductor,must,yes,yes,calculada; escrita a mano en los ejercicios
+Control de velocidad,reproductor,must,yes,yes,"25 a 200 por ciento, en vivo"
+Nombres de nota sobre las teclas,reproductor,should,yes,yes,Do Re Mi o C D E
+Cuenta atras antes de empezar,reproductor,should,yes,yes,"0, 1 o 2 compases"
+Pausa y reinicio durante la practica,reproductor,must,yes,yes,
+Secciones automaticas de la cancion,secciones,must,yes,yes,alineadas a compas
+Bucle A-B para repetir un trozo,secciones,must,yes,yes,
+Practicar una seccion con una sola mano,secciones,should,yes,yes,
+Modo mastery con puntaje,practica,must,yes,yes,
+Tres niveles de dificultad,practica,should,yes,yes,cambian la ventana de acierto
+Pantalla de resultados con precision,practica,must,yes,yes,
+Estrellas por cancion,practica,should,yes,yes,
+Modo escuchar la cancion completa,practica,should,yes,yes,
+Tocar con teclado MIDI,entrada,must,yes,partial,Web MIDI donde exista; Safari en iPad no lo trae y lo dice
+Tocar con piano acustico por microfono,entrada,must,yes,partial,"deteccion por picos del espectro: bien con notas sueltas, aproximada con acordes"
+Racha de dias practicando,progreso,should,yes,yes,
+Indicadores de progreso por cancion,progreso,should,yes,yes,
+Minutos practicados y estadisticas,progreso,could,yes,yes,mas calendario de 35 dias
+Recordatorio de racha,progreso,could,yes,no,haria falta notificaciones; en iOS una PWA no las da sin mas
+Onboarding guiado,onboarding,should,yes,yes,
+Ajustes de sonido y apariencia,ajustes,should,yes,yes,
+Varios idiomas,ajustes,could,yes,no,solo espanol
+Compartir una cancion con un amigo,social,could,yes,skip,red y backend del original; aqui se exporta el archivo
+Cuenta de usuario y sincronizacion en la nube,cuenta,should,yes,skip,fuera de alcance: todo es local y exportable
+Suscripcion Pro y muro de pago,monetizacion,must,yes,skip,es justo lo que se quita; la app es ilimitada
+Catalogo de canciones con copyright,catalogo,must,yes,skip,contenido licenciado; nuestro catalogo es dominio publico
+Personaje guia Annie,onboarding,could,yes,skip,arte y marca del original
+Soporte de teclados concretos de marca,entrada,could,yes,skip,hardware especifico; se soporta MIDI generico
+Funciona sin internet una vez instalada,mejora,could,no,yes,mejora propia: PWA offline
+Sin limite de canciones y sin suscripcion,mejora,could,no,yes,mejora propia
+Velocidad desde 25 por ciento,mejora,could,no,yes,mejora propia: el original solo ralentiza
+Teclado libre para improvisar y grabar,mejora,could,no,yes,mejora propia
+Grabar lo que toques y guardarlo como cancion,mejora,could,no,yes,mejora propia
+Exportar e importar toda tu biblioteca,mejora,could,no,yes,"un .json con canciones, progreso y racha"
+Transponer la cancion de tono,mejora,could,no,yes,"mas o menos 12 semitonos, con la digitacion recalculada"
+Metronomo y claqueta,mejora,could,no,yes,mejora propia
+Mapa de calor de compases fallados,mejora,could,no,yes,y un boton para practicar justo esos compases
+Calibracion de latencia,mejora,could,no,yes,de -150 a +300 ms

@@ -1,0 +1,23 @@
+{
+  "name": "cascada-piano",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tutor de piano con notas que caen. PWA sin dependencias, sin servidor y sin suscripción.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node tests/engine.test.mjs && node tests/tokens.test.mjs",
+    "test:e2e": "node tests/e2e.mjs",
+    "test:all": "npm test && npm run test:e2e",
+    "icons": "python3 tools/make_icons.py",
+    "parity": "python3 .claude/skills/replica-diff/parity.py replica/features.csv",
+    "sweep": "python3 .claude/skills/replica-brand/sweep.py . --config replica/sweep.json",
+    "contrast": "python3 .claude/skills/replica-design/contrast.py replica/design/tokens.json",
+    "listing": "python3 .claude/skills/replica-launch/listing.py replica/launch/listing.json"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18"
+  }
+}
