@@ -20,7 +20,7 @@ El repositorio ya trae el flujo de GitHub Pages. Solo hay que encenderlo:
 
 1. En GitHub, ve a **Settings → Pages**.
 2. En **Source**, elige **GitHub Actions**.
-3. Fusiona esta rama a `main`. El flujo corre las pruebas y publica.
+3. Fusiona esta rama a `main`. El flujo corre las pruebas (también en cada pull request) y publica desde `main`.
 
 Queda en `https://javi-molin.github.io/piano/`.
 

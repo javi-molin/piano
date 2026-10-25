@@ -1,10 +1,14 @@
-# Publica Cascada en GitHub Pages. El sitio es estático: no hay nada que compilar,
-# se sube el repositorio tal cual (menos los archivos de trabajo).
-name: Publicar en GitHub Pages
+# Pruebas y publicación de Cascada.
+#
+# Las tres suites corren en cada pull request y en cada push a main. Publicar en
+# GitHub Pages solo ocurre en main: el sitio es estático y no hay nada que
+# compilar, se sube el repositorio tal cual menos los archivos de trabajo.
+name: Pruebas y publicación
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -35,6 +39,8 @@ jobs:
 
   publicar:
     needs: pruebas
+    # En un pull request solo se corren las pruebas: publicar es cosa de main.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

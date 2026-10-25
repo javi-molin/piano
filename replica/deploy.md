@@ -23,7 +23,8 @@ interfaz. Para el encargo —un tutor de piano ilimitado en un iPad— eso no bl
 
 Sitio estático. No hay servidor, base de datos, claves ni variables de entorno.
 
-1. **GitHub Pages** desde `.github/workflows/pages.yml`: corre las tres suites y publica.
+1. **GitHub Pages** desde `.github/workflows/pages.yml`: las tres suites corren en cada
+   pull request y en cada push a `main`; publicar solo ocurre en `main`.
    En el repositorio: *Settings → Pages → Source: GitHub Actions*.
 2. Queda en `https://<usuario>.github.io/<repo>/`.
 3. **Hace falta https.** El service worker y "Añadir a pantalla de inicio" no funcionan
