@@ -20,6 +20,11 @@ Severidad: S1 rompe la app · S2 falsea lo que ves · S3 molesta · S4 cosmétic
 
 | 13 | S3 | Una prueba de navegador pasaba en local y **fallaba en CI**: el stub del oEmbed no interceptaba y la llamada salía a internet de verdad | los patrones con comodines de Playwright no se interpretan igual en 1.49 (la de CI) que en 1.63 (la local) | cerrado: expresión regular en vez de comodines, y **todas** las pruebas cortan ya cualquier petición que salga de la máquina, así que un stub mal puesto falla en voz alta en vez de pasar por suerte |
 
+| 14 | S2 | Un MIDI importado llegaba **con el título en rombos** | se decodificaba siempre como UTF-8 "a lo que salga"; miles de MIDI vienen en Shift-JIS o en Windows-1252 | cerrado: se prueban las tres codificaciones en orden y, si ninguna da algo legible, manda el nombre del archivo. Además ahora se puede renombrar |
+| 15 | S2 | El micrófono detectaba **un Mi4 como Mi3**, y en agudo se iba una octava abajo | buscaba el pico más alto del espectro, y en un piano los armónicos pegan más fuerte que el fundamental | cerrado: detección por autocorrelación (YIN) en dos pasadas, con rescate explícito del error de octava. 69 notas de Mi1 a Do7, exactas, también con ruido |
+| 16 | S3 | Las teclas negras estaban centradas en la junta | era una rejilla, no un piano | cerrado: posiciones reales (Do# y Re# simétricos sobre el Re, Sol# en su junta) y tapas de blancas recortadas |
+| 17 | S4 | Exportar a MIDI se comía los acentos del título | el nombre se recortaba a ASCII | cerrado: va en UTF-8 |
+
 **Abiertos: ninguno de S1 ni S2.** Lo que queda son límites conocidos, no fallos:
 la transcripción de audio es monofónica, la detección por micrófono se confunde con acordes
 densos, y Safari en iPad no tiene Web MIDI.

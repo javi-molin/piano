@@ -6,11 +6,12 @@ import { CATALOG, applyWrittenFingers } from './songs.js';
 import { engine, TIMBRE_NAMES } from './audio.js';
 import { songFromMidi, songToMidiBytes, MidiInput, estimateDifficulty } from './midi.js';
 import { MicInput } from './mic.js';
-import { transcribeFile, transcribeBuffer, AudioCapture } from './transcribe.js';
-import { buildLayout, wholeOctaves, drawKeyboard, attachPointerInput, computerKeyToMidi } from './keyboard.js';
-import { drawRoll, keyboardMarks, barHeatmap } from './roll.js';
+import { transcribeFile, transcribeAny, AudioCapture, estimateWork } from './transcribe.js';
+import { buildLayout, wholeOctaves, drawKeyboard, attachPointerInput, computerKeyToMidi,
+  whiteWidthFor, clampOffset, offsetToCenter, countWhites, drawPanStrip } from './keyboard.js';
+import { drawRoll, keyboardMarks, barHeatmap, upcomingMidis } from './roll.js';
 import { Player, MODES } from './player.js';
-import { THEME } from './tokens.js';
+import { themeFor, PALETTES } from './tokens.js';
 import * as store from './store.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -35,6 +36,7 @@ const state = {
   lastResult: null,
   fit: null,
   link: null,
+  pan: { offset: 0, auto: true, lastManual: 0 },
   free: { base: 48, sustain: false, recording: null, pressed: new Set(), detach: null, raf: 0 },
 };
 
@@ -387,6 +389,7 @@ function renderSongDetail() {
   ].filter(Boolean).join(' · ');
   $('#song-pin').textContent = progress.pinned ? 'No fijar' : 'Fijar';
   $('#song-delete').hidden = song.source === 'builtin';
+  $('#song-rename').hidden = song.source === 'builtin';
   $('#difficulty-field').hidden = state.options.mode === 'learn' || state.options.mode === 'listen';
 
   setMode(state.options.mode);
@@ -517,6 +520,7 @@ async function startPlay(range, loop) {
   state.range = range ? { ...range } : { start: 0, end: song.lengthBeats };
   state.loop = !!loop;
   keyRange = computeKeyRange(song);
+  state.pan = { offset: 0, auto: true, lastManual: 0 };
 
   const player = new Player(engine, song, {
     mode: state.options.mode,
@@ -565,6 +569,7 @@ async function startPlay(range, loop) {
     state.detachKeys = attachPointerInput(playerCanvas(), () => playerGeo, {
       onDown: (midi) => handleNoteOn(midi, 0.85, 'touch'),
       onUp: (midi) => handleNoteOff(midi, 'touch'),
+      onPan: panTo,
     });
   }
   await player.start();
@@ -582,32 +587,63 @@ function runLoop() {
   state.raf = requestAnimationFrame(step);
 }
 
+/** El teclado que se ve: cuántas blancas caben y cuánto se ha deslizado. */
+function playerLayout(viewWidth) {
+  const total = countWhites(keyRange.lo, keyRange.hi);
+  const wanted = Number(state.settings.keysVisible) || 0;
+  const visible = wanted ? Math.min(total, Math.max(5, wanted)) : total;
+  return buildLayout(keyRange.lo, keyRange.hi, whiteWidthFor(viewWidth, visible));
+}
+
 function drawPlayerFrame() {
   const player = state.player;
   const song = player.song;
   const canvas = playerCanvas();
   const { ctx, w, h } = sizeCanvas(canvas);
-  const keyboardHeight = Math.max(84, Math.min(210, h * 0.34));
+  const settings = state.settings;
+  const theme = themeFor(settings.palette);
+
+  const keyboardHeight = Math.max(70, Math.min(h * 0.55, h * (settings.keyboardHeight / 100)));
+  const layout = playerLayout(w);
+  const needsPan = layout.contentWidth > w + 1;
+  // La barra va arriba del todo, como un mapa. Entre las notas y las teclas no
+  // cabe nada: las notas tienen que aterrizar sobre la tecla, no sobre otra cosa.
+  const stripHeight = needsPan ? 12 : 0;
+  const stripTop = 5;
+  const rollTop = needsPan ? stripHeight + 10 : 0;
   const hitLine = Math.max(60, h - keyboardHeight);
-  const layout = buildLayout(keyRange.lo, keyRange.hi, w);
-  playerGeo = { layout, top: hitLine, height: keyboardHeight };
 
   const snapshot = player.tick();
-  const lookAheadSeconds = 2.6;
-  const pxPerBeat = Math.max(22, Math.min(440, hitLine / Math.max(0.2, player.bps * lookAheadSeconds)));
+  const hands = player.config.judge ? player.hands : 'none';
+
+  // El teclado sigue a la canción, salvo que lo hayas movido tú hace poco.
+  if (needsPan && settings.autoFollow && state.pan.auto) {
+    const target = offsetToCenter(layout, w, upcomingMidis(song, snapshot.beat, 4, hands));
+    if (target != null) state.pan.offset += (target - state.pan.offset) * 0.08;
+  }
+  if (!needsPan) state.pan.offset = 0;
+  state.pan.offset = clampOffset(layout, w, state.pan.offset);
+  if (!state.pan.auto && Date.now() - state.pan.lastManual > 6000) state.pan.auto = true;
+
+  const lookAhead = Math.max(1, Number(settings.lookAheadSeconds) || 2.6);
+  const pxPerBeat = Math.max(16, Math.min(520, (hitLine - rollTop) / Math.max(0.2, player.bps * lookAhead)));
 
   ctx.clearRect(0, 0, w, h);
   drawRoll(ctx, {
     layout, song,
     beat: snapshot.beat,
-    pxPerBeat, rollTop: 0, hitLine,
-    hands: player.config.judge ? player.hands : 'none',
+    pxPerBeat, rollTop, hitLine,
+    viewWidth: w,
+    offset: state.pan.offset,
+    hands,
     states: snapshot.states,
     loop: state.loop ? { active: true, start: state.range.start, end: state.range.end } : null,
-    theme: THEME,
+    theme,
     waiting: snapshot.waiting,
-    showFingers: state.settings.showFingers,
-    showNames: state.settings.showNames,
+    showFingers: settings.showFingers,
+    showNames: settings.showNames,
+    showGrid: settings.showGrid !== false,
+    showGlow: settings.showGlow !== false,
     nameFor: noteName,
   });
 
@@ -615,17 +651,42 @@ function drawPlayerFrame() {
     song,
     beat: snapshot.beat,
     states: snapshot.states,
-    hands: player.config.judge ? player.hands : 'none',
+    hands,
     pressed: snapshot.pressed,
     window: Math.max(player.window, 0.2),
   });
+
+  let strip = null;
+  if (needsPan) {
+    strip = drawPanStrip(ctx, layout, stripTop, stripHeight, state.pan.offset, w, { theme, marks });
+  }
   drawKeyboard(ctx, layout, hitLine, keyboardHeight, marks, {
-    theme: THEME,
-    labels: state.settings.labels,
-    lang: state.settings.noteNames,
+    theme,
+    labels: settings.labels,
+    lang: settings.noteNames,
+    offset: state.pan.offset,
+    viewWidth: w,
   });
 
+  playerGeo = {
+    layout, top: hitLine, height: keyboardHeight,
+    offset: state.pan.offset, viewWidth: w,
+    pan: strip ? { top: 0, height: stripTop + stripHeight + 6, scale: strip.scale } : null,
+    rollDrag: needsPan ? { top: rollTop, height: Math.max(0, hitLine - rollTop) } : null,
+  };
+
   updateHud(snapshot);
+}
+
+/** Alguien movió el teclado a mano: se para el seguimiento un rato. */
+function playerGeometry() {
+  return playerGeo;
+}
+
+function panTo(offset) {
+  state.pan.offset = offset;
+  state.pan.auto = false;
+  state.pan.lastManual = Date.now();
 }
 
 function updateHud(snapshot) {
@@ -762,10 +823,7 @@ function handleNoteOff(midi, source) {
 async function setInputMode(mode) {
   state.settings = store.saveSettings({ inputMode: mode });
   const status = $('#input-status');
-  const level = $('#mic-level');
-  const test = $('#input-test');
-  level.hidden = true;
-  test.hidden = true;
+  $('#mic-panel').hidden = mode !== 'mic';
 
   if (state.micInput) { state.micInput.stop(); state.micInput = null; }
   if (state.midiInput) { state.midiInput.disconnect(); state.midiInput = null; }
@@ -801,13 +859,14 @@ async function setInputMode(mode) {
     }
     try {
       const input = new MicInput(engine);
+      input.sensitivity = (state.settings.micSensitivity != null ? state.settings.micSensitivity : 50) / 100;
       input.onNoteOn = (midi, velocity) => handleNoteOn(midi, velocity, 'mic');
       input.onNoteOff = (midi) => handleNoteOff(midi, 'mic');
       input.onLevel = (value) => { $('#mic-level-fill').style.width = pct(value); };
+      input.onDetect = showHeardNote;
       await input.start();
       state.micInput = input;
-      level.hidden = false;
-      if (status) status.textContent = 'Escuchando. Toca una nota en tu piano: debería iluminarse en la pantalla. Con auriculares va mejor, el altavoz se oye a sí mismo.';
+      if (status) status.textContent = 'Escuchando. Toca una nota en tu piano y mira aquí abajo: tiene que salir su nombre. Con auriculares va mejor, el altavoz se oye a sí mismo.';
     } catch (e) {
       if (status) status.textContent = `No se pudo abrir el micrófono: ${e.message}`;
       toast('Sin permiso de micrófono.', 'bad');
@@ -815,6 +874,26 @@ async function setInputMode(mode) {
       setInputSegment('touch');
     }
   }
+}
+
+/** El cartel de "esto es lo que oigo": sirve para comprobarlo en dos segundos. */
+function showHeardNote(result) {
+  const box = $('#mic-heard');
+  const note = $('#mic-note');
+  const detail = $('#mic-cents');
+  if (!box) return;
+  if (!result || !result.midi) {
+    note.textContent = '—';
+    detail.textContent = 'toca una nota en tu piano';
+    box.removeAttribute('data-tuned');
+    return;
+  }
+  note.textContent = fullName(result.midi);
+  const cents = result.cents || 0;
+  box.dataset.tuned = Math.abs(cents) <= 15 ? 'yes' : 'off';
+  detail.textContent = Math.abs(cents) <= 15
+    ? 'afinada'
+    : `${cents > 0 ? '+' : ''}${cents} centésimas (${cents > 0 ? 'un pelo alta' : 'un pelo baja'})`;
 }
 
 let setInputSegment = () => {};
@@ -855,14 +934,16 @@ function startFree() {
     if ($('[data-screen="free"]').hidden) return;
     const { ctx, w, h } = sizeCanvas(canvas);
     const range = freeRange();
-    const layout = buildLayout(range.lo, range.hi, w);
-    geo = { layout, top: 0, height: h };
+    const layout = buildLayout(range.lo, range.hi, whiteWidthFor(w, countWhites(range.lo, range.hi)));
+    geo = { layout, top: 0, height: h, offset: 0, viewWidth: w };
     ctx.clearRect(0, 0, w, h);
     const marks = new Map();
     for (const midi of state.free.pressed) marks.set(midi, { state: 'press', hand: 'R', finger: 0 });
     drawKeyboard(ctx, layout, 0, h, marks, {
-      theme: THEME, labels: state.settings.labels === 'none' ? 'white' : state.settings.labels,
+      theme: themeFor(state.settings.palette),
+      labels: state.settings.labels === 'none' ? 'white' : state.settings.labels,
       lang: state.settings.noteNames,
+      viewWidth: w,
     });
     const rec = state.free.recording;
     if (rec) $('#free-record-label').textContent = fmtTime(performance.now() - rec.startedAt);
@@ -972,7 +1053,7 @@ function importProgress(ratio) {
   $('#import-progress-fill').style.width = pct(ratio);
 }
 
-async function addSongFromBuffer(buffer, filename) {
+async function addSongFromBuffer(buffer, filename, { reveal = true } = {}) {
   const lower = (filename || '').toLowerCase();
   const status = $('#import-status');
   const isMidi = lower.endsWith('.mid') || lower.endsWith('.midi') || looksLikeMidi(buffer);
@@ -992,19 +1073,21 @@ async function addSongFromBuffer(buffer, filename) {
     status.textContent = 'Leyendo el MIDI…';
     song = songFromMidi(buffer, filename ? filename.replace(/\.[^.]+$/, '') : 'Canción importada');
   } else {
-    status.textContent = 'Escuchando el audio y buscando la melodía… esto tarda un rato.';
+    status.textContent = 'Leyendo el audio y buscando la melodía. En canciones largas tarda; no cierres esta pantalla.';
     const result = await transcribeFile(buffer, engine, {
-      bpm: transcribeBpm(), quantize: transcribeGrid(), onProgress: importProgress,
+      bpm: transcribeBpm(), quantize: transcribeGrid(), mode: transcribeMode(), onProgress: importProgress,
     });
-    await saveTranscription(result, filename ? filename.replace(/\.[^.]+$/, '') : 'Transcripción');
+    await saveTranscription(result, filename ? filename.replace(/\.[^.]+$/, '') : 'Transcripción', { reveal });
     return;
   }
 
   await store.saveSong(song);
   await loadSongs();
   renderLibrary();
-  closeAddSheet();
-  openSong(song.id);
+  if (reveal) {
+    closeAddSheet();
+    openSong(song.id);
+  }
   if (isMidi) toast(`"${song.title}" añadida.`, 'good');
 }
 
@@ -1016,13 +1099,17 @@ function looksLikeMidi(buffer) {
 async function handleFiles(files) {
   const status = $('#import-status');
   for (const file of files) {
-    if (file.size > 25 * 1024 * 1024) {
-      status.textContent = `${file.name} pesa demasiado (más de 25 MB).`;
-      continue;
+    // Sin tope de tamaño: el audio se decodifica ya a 16 kHz, así que una
+    // canción larga tarda más pero cabe. Lo único honesto es avisar del rato.
+    const big = file.size > 8 * 1024 * 1024;
+    if (big) {
+      status.textContent = `${file.name} son ${Math.round(file.size / 1048576)} MB. `
+        + 'Va a tardar un rato: deja esta pantalla abierta.';
     }
     try {
       const buffer = await file.arrayBuffer();
-      await addSongFromBuffer(buffer, file.name);
+      // Solo la última abre su pantalla: si no, importar varias salta de una a otra.
+      await addSongFromBuffer(buffer, file.name, { reveal: file === files[files.length - 1] });
     } catch (e) {
       status.textContent = e.message;
       toast(e.message, 'bad');
@@ -1185,19 +1272,21 @@ function cancelCapture() {
 async function finishCapture() {
   if (!capture) return;
   clearInterval(captureTimer);
-  const buffer = capture.stop();
+  const recording = capture.stop();
   capture = null;
   $('#capture-panel').hidden = true;
   const status = $('#import-status');
-  if (!buffer || buffer.duration < 2) {
+  if (!recording || recording.duration < 2) {
     status.textContent = 'Se grabó muy poco. Dale al play antes de empezar a grabar.';
     return;
   }
-  status.textContent = `Grabados ${fmtTime(buffer.duration * 1000)}. Buscando las notas…`;
+  status.textContent = `Grabados ${fmtTime(recording.duration * 1000)}. `
+    + `Buscando las notas: unos ${estimateWork(recording.duration, transcribeMode())} segundos.`;
   try {
-    const result = await transcribeBuffer(buffer, {
+    const result = await transcribeAny(recording.samples, recording.rate, recording.duration, {
       bpm: transcribeBpm(),
       quantize: transcribeGrid(),
+      mode: transcribeMode(),
       onProgress: importProgress,
     });
     if (!result.notes.length) {
@@ -1219,13 +1308,18 @@ function transcribeBpm() {
   return $('#transcribe-auto').checked ? 0 : Number($('#transcribe-bpm').value);
 }
 
+function transcribeMode() {
+  const chosen = $('[data-mode2][aria-checked="true"]', $('#transcribe-mode'));
+  return chosen ? chosen.dataset.mode2 : 'acordes';
+}
+
 function transcribeGrid() {
   const chosen = $('[data-grid][aria-checked="true"]', $('#transcribe-grid'));
   return chosen ? Number(chosen.dataset.grid) : 0.25;
 }
 
 /** Guarda lo transcrito y lo abre, para que se pueda tocar enseguida. */
-async function saveTranscription(result, title) {
+async function saveTranscription(result, title, { reveal = true } = {}) {
   const song = buildSong({
     title: String(title).slice(0, 80),
     source: 'audio',
@@ -1237,9 +1331,11 @@ async function saveTranscription(result, title) {
   await store.saveSong(song);
   await loadSongs();
   renderLibrary();
-  hideRoutes();
-  closeAddSheet();
-  openSong(song.id);
+  if (reveal) {
+    hideRoutes();
+    closeAddSheet();
+    openSong(song.id);
+  }
   const tempo = result.detectedBpm
     ? `tempo detectado ${result.detectedBpm} bpm`
     : `tempo ${result.bpm} bpm`;
@@ -1272,6 +1368,10 @@ function renderSettings() {
   $('#set-countin-out').textContent = s.countInBars === 0 ? 'sin claqueta' : `${s.countInBars} compás${s.countInBars > 1 ? 'es' : ''}`;
   $('#set-latency').value = String(s.latencyMs);
   $('#set-latency-out').textContent = `${s.latencyMs} ms`;
+  const sensitivity = s.micSensitivity != null ? s.micSensitivity : 50;
+  $('#set-mic-sensitivity').value = String(sensitivity);
+  $('#set-mic-sensitivity-out').textContent = sensitivity < 34 ? 'baja' : sensitivity > 66 ? 'alta' : 'media';
+  $('#mic-panel').hidden = s.inputMode !== 'mic';
   $('#set-goal').value = String(s.dailyGoalMinutes);
   $('#set-goal-out').textContent = `${s.dailyGoalMinutes} min`;
   $('#set-fingers').checked = !!s.showFingers;
@@ -1298,6 +1398,37 @@ function renderSettings() {
   for (const b of $$('[data-labels]', $('#set-labels'))) b.setAttribute('aria-checked', String(b.dataset.labels === s.labels));
   for (const b of $$('[data-input]', $('#set-input'))) b.setAttribute('aria-checked', String(b.dataset.input === s.inputMode));
   renderPianoSettings();
+  renderRollSettings();
+}
+
+/** El panel de la zona donde caen las notas. */
+function renderRollSettings() {
+  const s = state.settings;
+  const host = $('#set-palette');
+  if (host && !host.children.length) {
+    for (const [id, palette] of Object.entries(PALETTES)) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('role', 'radio');
+      button.dataset.palette = id;
+      button.textContent = palette.name;
+      host.appendChild(button);
+    }
+  }
+  for (const b of $$('[data-palette]', host)) {
+    b.setAttribute('aria-checked', String(b.dataset.palette === s.palette));
+  }
+  $('#set-lookahead').value = String(Math.round(s.lookAheadSeconds * 10));
+  $('#set-lookahead-out').textContent = `${s.lookAheadSeconds.toFixed(1).replace('.', ',')} s`;
+  $('#set-keys-visible').value = String(s.keysVisible || 0);
+  $('#set-keys-visible-out').textContent = s.keysVisible
+    ? `${s.keysVisible} blancas`
+    : 'todas las que haga falta';
+  $('#set-kb-height').value = String(s.keyboardHeight);
+  $('#set-kb-height-out').textContent = `${s.keyboardHeight} %`;
+  $('#set-autofollow').checked = s.autoFollow !== false;
+  $('#set-grid').checked = s.showGrid !== false;
+  $('#set-glow').checked = s.showGlow !== false;
 }
 
 /** El panel "Tu piano": tamaño, nota más grave y qué hacer con lo que no cabe. */
@@ -1351,6 +1482,29 @@ function exportCurrentSongAsMidi() {
   toast('MIDI descargado.', 'good');
 }
 
+/** Cambiarle el nombre a una canción tuya: el del archivo no siempre sirve. */
+async function renameCurrentSong() {
+  const song = state.songBase;
+  if (!song || song.source === 'builtin') return;
+  const name = window.prompt('Nombre de la canción', song.title);
+  if (name == null) return;
+  const clean = name.trim().slice(0, 80);
+  if (!clean || clean === song.title) return;
+  song.title = clean;
+  state.song.title = clean;
+  try {
+    await store.saveSong(song);
+    await loadSongs();
+    state.songBase = findSong(song.id) || song;
+    applyArrangement();
+    renderSongDetail();
+    renderLibrary();
+    toast('Renombrada.', 'good');
+  } catch (e) {
+    toast(`No se pudo guardar el nombre: ${e.message}`, 'bad');
+  }
+}
+
 function slug(text) {
   return String(text).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'cancion';
@@ -1358,9 +1512,9 @@ function slug(text) {
 
 export { startPlay, closePlayer, practiceWorstBars, handleNoteOn, handleNoteOff,
   setInputMode, openAddSheet, closeAddSheet, handleFiles, fetchMidiUrl, renderSettings, doExport,
-  exportCurrentSongAsMidi, toggleRecording, updateFreeLabels, transposeLabel, download, slug,
+  exportCurrentSongAsMidi, renameCurrentSong, toggleRecording, updateFreeLabels, transposeLabel, download, slug,
   analyzeLink, hideRoutes, startCapture, cancelCapture, finishCapture, setTranspose,
-  renderPianoSettings, renderFitNotice, fullName };
+  renderPianoSettings, renderRollSettings, renderFitNotice, fullName, panTo, playerGeometry, showHeardNote };
 
 function setPlayerHands(value) {
   for (const b of $$('[data-hands]', $('#player-hands'))) b.setAttribute('aria-checked', String(b.dataset.hands === value));

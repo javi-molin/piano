@@ -4,9 +4,9 @@ Build: rama `jm/epic-clarke-xzil2q` · Fecha: 2026-10-25 · Entorno: Chromium he
 servidor estático del propio proyecto, y Node para el núcleo.
 
 ```
-node tests/engine.test.mjs    43 pruebas del núcleo (DSL, MIDI, teclado, tutor, tu piano, tempo)
+node tests/engine.test.mjs    59 pruebas del núcleo (DSL, MIDI, teclado, tutor, tu piano, tempo, afinación, micrófono, acordes)
 node tests/tokens.test.mjs    los tokens de diseño no se separan entre sus tres copias
-node tests/e2e.mjs            24 recorridos en un navegador de verdad
+node tests/e2e.mjs            37 recorridos en un navegador de verdad
 ```
 
 | caso | flujo | tipo | pasos | esperado | auto | resultado |
@@ -45,6 +45,29 @@ node tests/e2e.mjs            24 recorridos en un navegador de verdad
 | TMP-1 | tempo | feliz | pista de clics a 120 y a 80 bpm | los detecta con ±2 bpm de error | unit | pasa |
 | TMP-2 | tempo | negativo: silencio | audio plano | devuelve 0 y se usa el valor puesto a mano | unit | pasa |
 | HID-1 | interfaz | negativo | mirar lo que debería estar escondido | el botón de borrar, el cronómetro y los bloques del enlace no se ven | e2e | pasa |
+| MP3-1 | importar | feliz | subir un .mp3 de verdad (`tests/fixtures/melodia.mp3`, cuatro notas sintetizadas aquí) | se transcribe a Do4 Mi4 Sol4 Do5 y queda en la biblioteca marcada como transcrita | e2e | pasa |
+| MP3-2 | importar | borde: archivo grande y largo | subir un wav de 7 minutos y 37 MB | avisa de que tardará y lo importa, sin rechazarlo | e2e | pasa |
+| MP3-3 | importar | feliz | dos archivos de golpe | entran los dos y solo se abre el último | e2e | pasa |
+| MP3-4 | importar | — | mirar el selector de archivos | ofrece .mp3, .m4a, .wav, .ogg, .flac y .mid, y el texto dice que no hay límite | e2e | pasa |
+| TEC-1 | teclado | — | medir la geometría | Do# y Re# simétricos sobre el Re, Sol# en su junta, Do y Mi espejo, negra = 0,55 blanca | unit | pasa |
+| TEC-2 | teclado | feliz | poner 12 teclas a la vista y abrir una pieza ancha | aparece la barra y el teclado se desliza | e2e | pasa |
+| TEC-3 | teclado | borde | tocar con el teclado deslizado | acierta la tecla que se ve, no la de debajo | unit | pasa |
+| AFI-1 | afinación | feliz | las 69 notas de Mi1 a Do7 | todas exactas | unit | pasa |
+| AFI-2 | afinación | borde: agudo | Do6, Mi6, Sol6, La6, Do7 | ninguna se va una octava abajo | unit | pasa |
+| AFI-3 | afinación | borde: ruido | 12 % de ruido encima | siguen todas exactas | unit | pasa |
+| AFI-4 | afinación | feliz | un La4 cuarenta centésimas alto | lo dice, y dice cuánto | unit | pasa |
+| AFI-5 | afinación | negativo | silencio | no inventa ninguna nota | unit | pasa |
+| MIC-2 | micrófono | feliz | diez notas seguidas con silencios | las diez, en orden, y todas soltadas | unit | pasa |
+| MIC-3 | micrófono | — | elegir micrófono en Ajustes | sale lo que oye y la sensibilidad; sin elegirlo, no | e2e | pasa |
+| TIT-1 | importar | borde: Shift-JIS | un MIDI con el nombre en japonés | se lee bien, sin rombos | e2e | pasa |
+| TIT-2 | importar | negativo: ilegible | bytes que no son nada | se queda el nombre del archivo | e2e | pasa |
+| TIT-3 | importar | feliz | renombrar lo importado | cambia y sobrevive a recargar; el catálogo no se renombra | e2e | pasa |
+| UXD-1 | pantalla | feliz | cambiar paleta, rejilla, brillo y seguimiento | se guardan y la canción se sigue dibujando | e2e | pasa |
+| ACO-1 | acordes | feliz | tres tríadas seguidas | las nueve notas, exactas | unit | pasa |
+| ACO-2 | acordes | negativo | cuatro acordes con bajo | ni una nota inventada, y 80 % o más de acierto | unit | pasa |
+| ACO-3 | acordes | borde | una melodía sola por el modo acordes | sale igual de bien | unit | pasa |
+| ACO-4 | acordes | negativo | silencio | ningún acorde | unit | pasa |
+| ACO-5 | acordes | — | elegir el modo al importar | se puede, y el mp3 se transcribe en los dos | e2e | pasa |
 | MIC-1 | micrófono | manual | elegir micrófono en Ajustes y tocar un piano | las teclas se iluminan | manual | pendiente de probar con un piano real |
 | CAP-2 | grabar | manual | poner una canción en un altavoz y grabarla entera | sale una melodía reconocible | manual | pendiente de probar con música real |
 | CAP-3 | grabar | manual | capturar el sonido de una pestaña en un portátil | graba lo que suena en esa pestaña | manual | pendiente; en el iPad no existe y el botón no sale |

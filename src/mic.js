@@ -1,15 +1,22 @@
 // mic.js — oír un piano de verdad.
 //
-// Safari en iPad no implementa Web MIDI, así que el micrófono es el camino para
-// tocar en un piano acústico o en un teclado sin USB. Se buscan picos en el
-// espectro y se descartan los que son armónicos de otro más grave: sin eso, un
-// Do suena como un Do, un Sol y un Mi a la vez.
+// Safari en iPad no implementa Web MIDI, así que el micrófono es el camino
+// para tocar en un piano acústico o en un teclado sin USB.
+//
+// Detecta **una nota a la vez**, y lo hace bien: mide cada cuánto se repite la
+// onda (ver pitch.js) en vez de buscar el pico más alto del espectro, que es
+// lo que hacía antes y lo que confundía un Mi4 con el Mi3 de debajo. Para
+// acordes hace falta otra cosa; aquí no se finge que los oye.
 
-const A4 = 440;
+import { detectPitch, rms, freqToMidi } from './pitch.js';
 
-export function freqToMidi(freq) {
-  return 69 + 12 * Math.log2(freq / A4);
-}
+export { freqToMidi };
+
+const FRAME = 4096;          // ~93 ms a 44,1 kHz: llega hasta el Mi1
+const HOLD_MS = 190;         // sin señal este rato, se suelta la nota
+const CONFIRM_FRAMES = 2;    // dos lecturas seguidas antes de darla por buena
+const MIN_MIDI = 28;         // Mi1
+const MAX_MIDI = 96;         // Do7
 
 export class MicInput {
   constructor(engine) {
@@ -18,18 +25,24 @@ export class MicInput {
     this.analyser = null;
     this.data = null;
     this.raf = 0;
-    this.active = new Map(); // midi -> { frames, since }
     this.onNoteOn = null;
     this.onNoteOff = null;
     this.onLevel = null;
-    this.noiseFloor = -92;
-    this.sensitivity = 18; // dB por encima del suelo de ruido
-    this.minMidi = 28;
-    this.maxMidi = 96;
+    this.onDetect = null;     // para que los ajustes enseñen lo que se oye
+    this.sensitivity = 0.5;   // 0 = sordo en sala ruidosa, 1 = muy sensible
+    this.held = null;         // { midi, since }
+    this.candidate = null;    // { midi, frames }
+    this.floor = 0.004;       // suelo de ruido, se aprende solo
+    this.loudness = 0;        // media suave, para notar los ataques
   }
 
   static get supported() {
     return typeof navigator !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  get gate() {
+    // Más sensibilidad = umbral más bajo sobre el suelo de ruido aprendido.
+    return Math.max(0.0025, this.floor * (5.5 - 3.5 * this.sensitivity));
   }
 
   async start() {
@@ -44,16 +57,15 @@ export class MicInput {
       },
     });
     const source = ctx.createMediaStreamSource(this.stream);
+    // Un corte en graves quita el retumbe de la sala sin tocar las notas.
     const highpass = ctx.createBiquadFilter();
     highpass.type = 'highpass';
-    highpass.frequency.value = 55;
+    highpass.frequency.value = 35;
     this.analyser = ctx.createAnalyser();
-    this.analyser.fftSize = 8192;
-    this.analyser.smoothingTimeConstant = 0.35;
-    this.analyser.minDecibels = -110;
-    this.analyser.maxDecibels = -10;
+    this.analyser.fftSize = FRAME;
+    this.analyser.smoothingTimeConstant = 0;
     source.connect(highpass).connect(this.analyser);
-    this.data = new Float32Array(this.analyser.frequencyBinCount);
+    this.data = new Float32Array(FRAME);
     this.sampleRate = ctx.sampleRate;
     this.loop();
     return true;
@@ -62,10 +74,7 @@ export class MicInput {
   stop() {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
-    for (const midi of [...this.active.keys()]) {
-      if (this.onNoteOff) this.onNoteOff(midi, 'mic');
-    }
-    this.active.clear();
+    this.release();
     if (this.stream) {
       for (const track of this.stream.getTracks()) track.stop();
       this.stream = null;
@@ -77,84 +86,63 @@ export class MicInput {
     return !!this.analyser;
   }
 
+  release() {
+    if (this.held && this.onNoteOff) this.onNoteOff(this.held.midi, 'mic');
+    this.held = null;
+    this.candidate = null;
+  }
+
   loop() {
     if (!this.analyser) return;
     this.raf = requestAnimationFrame(() => this.loop());
-    this.analyser.getFloatFrequencyData(this.data);
-    const peaks = this.findPeaks();
+    this.analyser.getFloatTimeDomainData(this.data);
+
+    const level = rms(this.data);
+    // El suelo de ruido se aprende de los ratos callados.
+    if (level < this.floor * 1.5 || this.floor === 0) this.floor = this.floor * 0.95 + level * 0.05;
     const now = performance.now();
-    const seen = new Set();
+    const gate = this.gate;
 
-    for (const peak of peaks) {
-      const midi = Math.round(freqToMidi(peak.freq));
-      if (midi < this.minMidi || midi > this.maxMidi) continue;
-      seen.add(midi);
-      const entry = this.active.get(midi);
-      if (entry) {
-        entry.frames = Math.min(6, entry.frames + 1);
-        entry.lastSeen = now;
-      } else {
-        this.active.set(midi, { frames: 1, since: now, lastSeen: now, fired: false });
+    if (this.onLevel) this.onLevel(Math.min(1, level / Math.max(0.02, gate * 6)));
+
+    if (level < gate) {
+      this.loudness = this.loudness * 0.8;
+      if (this.held && now - this.held.seen > HOLD_MS) this.release();
+      if (this.onDetect && !this.held) this.onDetect(null);
+      return;
+    }
+
+    const result = detectPitch(this.data, this.sampleRate, { minConfidence: 0.78 });
+    if (this.onDetect) this.onDetect(result.midi ? { ...result, level } : null);
+
+    if (!result.midi || result.midi < MIN_MIDI || result.midi > MAX_MIDI) {
+      if (this.held && now - this.held.seen > HOLD_MS) this.release();
+      return;
+    }
+
+    // Golpe nuevo sobre la misma tecla: sube el volumen de golpe.
+    const attack = level > this.loudness * 1.8 && level > gate * 1.6;
+    this.loudness = Math.max(level, this.loudness * 0.85);
+
+    if (this.held && this.held.midi === result.midi) {
+      this.held.seen = now;
+      if (attack && now - this.held.since > 120) {
+        if (this.onNoteOff) this.onNoteOff(result.midi, 'mic');
+        if (this.onNoteOn) this.onNoteOn(result.midi, 0.85, 'mic');
+        this.held.since = now;
       }
+      return;
     }
 
-    for (const [midi, entry] of [...this.active.entries()]) {
-      if (!seen.has(midi)) entry.frames -= 1;
-      if (!entry.fired && entry.frames >= 2) {
-        entry.fired = true;
-        if (this.onNoteOn) this.onNoteOn(midi, 0.8, 'mic');
-      }
-      if (entry.frames <= 0 || now - entry.lastSeen > 220) {
-        this.active.delete(midi);
-        if (entry.fired && this.onNoteOff) this.onNoteOff(midi, 'mic');
-      }
-    }
+    // Nota distinta: hay que verla dos veces seguidas antes de creérsela.
+    if (this.candidate && this.candidate.midi === result.midi) this.candidate.frames += 1;
+    else this.candidate = { midi: result.midi, frames: 1 };
 
-    if (this.onLevel) {
-      let max = -200;
-      for (let i = 0; i < this.data.length; i++) if (this.data[i] > max) max = this.data[i];
-      this.onLevel(Math.max(0, Math.min(1, (max + 100) / 70)));
+    if (this.candidate.frames >= CONFIRM_FRAMES) {
+      if (this.held && this.onNoteOff) this.onNoteOff(this.held.midi, 'mic');
+      this.held = { midi: result.midi, since: now, seen: now };
+      this.candidate = null;
+      if (this.onNoteOn) this.onNoteOn(result.midi, Math.min(1, 0.5 + level * 6), 'mic');
     }
-  }
-
-  /** Picos locales con fuerza suficiente, sin los que son armónicos de otro. */
-  findPeaks() {
-    const bins = this.data;
-    const binHz = this.sampleRate / (this.analyser.fftSize);
-    const candidates = [];
-    const loBin = Math.max(2, Math.floor(60 / binHz));
-    const hiBin = Math.min(bins.length - 2, Math.ceil(2200 / binHz));
-    let floor = 0;
-    for (let i = loBin; i < hiBin; i++) floor += bins[i];
-    floor /= Math.max(1, hiBin - loBin);
-    const threshold = Math.max(this.noiseFloor, floor + this.sensitivity);
-
-    for (let i = loBin; i < hiBin; i++) {
-      const v = bins[i];
-      if (v < threshold) continue;
-      if (v <= bins[i - 1] || v < bins[i + 1]) continue;
-      // Interpolación parabólica: afina la frecuencia entre dos bins.
-      const alpha = bins[i - 1];
-      const beta = v;
-      const gamma = bins[i + 1];
-      const shift = (0.5 * (alpha - gamma)) / (alpha - 2 * beta + gamma || 1);
-      candidates.push({ freq: (i + shift) * binHz, db: v });
-    }
-
-    candidates.sort((a, b) => b.db - a.db);
-    const kept = [];
-    for (const c of candidates) {
-      let isHarmonic = false;
-      for (const k of kept) {
-        const ratio = c.freq / k.freq;
-        for (let n = 2; n <= 6; n++) {
-          if (Math.abs(ratio - n) < 0.045 && c.db < k.db - 2) { isHarmonic = true; break; }
-        }
-        if (isHarmonic) break;
-      }
-      if (!isHarmonic) kept.push(c);
-      if (kept.length >= 6) break;
-    }
-    return kept;
   }
 }

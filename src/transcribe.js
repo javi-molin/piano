@@ -6,6 +6,8 @@
 // canción pop completa, donde hay muchas notas a la vez. Para eso está el
 // import de MIDI, que es exacto.
 
+import { yin, freqToMidi } from './pitch.js';
+
 const TARGET_RATE = 16000;
 const FRAME = 1024;
 const HOP = 256;
@@ -47,67 +49,9 @@ function resample(samples, fromRate, toRate) {
   return out;
 }
 
-/**
- * YIN: diferencia acumulada normalizada. Devuelve [frecuencia, confianza].
- *
- * Lo importante es coger el PRIMER mínimo que baja del umbral, no el más
- * profundo: el más profundo suele caer en un múltiplo del periodo y entonces
- * un Mi4 se detecta como Mi3 o peor.
- */
-function yin(frame, rate) {
-  const tauMin = Math.max(2, Math.floor(rate / F0_MAX));
-  const tauMax = Math.min(Math.floor(frame.length / 2), Math.floor(rate / F0_MIN));
-  if (tauMax <= tauMin + 2) return [0, 0];
-
-  const diff = new Float32Array(tauMax + 2);
-  for (let tau = tauMin; tau <= tauMax; tau++) {
-    let sum = 0;
-    const last = frame.length - tau;
-    for (let i = 0; i < last; i++) {
-      const d = frame[i] - frame[i + tau];
-      sum += d * d;
-    }
-    diff[tau] = sum / last;
-  }
-
-  const cmnd = new Float32Array(tauMax + 2).fill(1);
-  let running = 0;
-  for (let tau = tauMin; tau <= tauMax; tau++) {
-    running += diff[tau];
-    cmnd[tau] = (diff[tau] * (tau - tauMin + 1)) / (running || 1);
-  }
-
-  let best = -1;
-  for (let tau = tauMin + 1; tau < tauMax; tau++) {
-    if (cmnd[tau] < YIN_THRESHOLD && cmnd[tau] <= cmnd[tau - 1] && cmnd[tau] <= cmnd[tau + 1]) {
-      best = tau;
-      break;
-    }
-  }
-  if (best < 0) {
-    let bestValue = Infinity;
-    for (let tau = tauMin; tau <= tauMax; tau++) {
-      if (cmnd[tau] < bestValue) { bestValue = cmnd[tau]; best = tau; }
-    }
-  }
-  if (best < 0) return [0, 0];
-
-  const a = best - 1 >= tauMin ? cmnd[best - 1] : cmnd[best];
-  const b = cmnd[best];
-  const c = best + 1 <= tauMax ? cmnd[best + 1] : cmnd[best];
-  const denominator = a - 2 * b + c;
-  const shift = denominator ? (0.5 * (a - c)) / denominator : 0;
-  const tau = best + (isFinite(shift) ? Math.max(-1, Math.min(1, shift)) : 0);
-  return [rate / tau, Math.max(0, Math.min(1, 1 - b))];
-}
-
 function median(values) {
   const sorted = [...values].sort((x, y) => x - y);
   return sorted[Math.floor(sorted.length / 2)];
-}
-
-function freqToMidi(freq) {
-  return 69 + 12 * Math.log2(freq / 440);
 }
 
 /**
@@ -115,11 +59,24 @@ function freqToMidi(freq) {
  * options: { bpm, quantize (en beats, 0 = sin cuantizar), onProgress }
  */
 export async function transcribeBuffer(audioBuffer, options = {}) {
+  const mono = resample(toMono(audioBuffer), audioBuffer.sampleRate, TARGET_RATE);
+  return transcribeSamples(mono, TARGET_RATE, audioBuffer.duration, options);
+}
+
+/**
+ * El análisis de verdad, sobre muestras mono ya a TARGET_RATE.
+ *
+ * Sin tope de duración: el trabajo crece en línea recta con el audio y entre
+ * tramo y tramo se le devuelve el turno al navegador, así que un archivo largo
+ * tarda más pero no congela nada ni se queda sin memoria.
+ */
+export async function transcribeSamples(mono, rate, duration, options = {}) {
   const quantize = options.quantize != null ? options.quantize : 0.25;
   const onProgress = options.onProgress || (() => {});
-
-  const mono = resample(toMono(audioBuffer), audioBuffer.sampleRate, TARGET_RATE);
   const frames = Math.max(0, Math.floor((mono.length - FRAME) / HOP));
+  // En audio largo conviene ceder el turno menos veces: cada pausa cuesta unos
+  // milisegundos y con decenas de miles de tramos eso se nota.
+  const yieldEvery = frames > 20000 ? 512 : 64;
   const pitches = new Float32Array(frames);
   const energies = new Float32Array(frames);
   let peakEnergy = 1e-9;
@@ -133,10 +90,10 @@ export async function transcribeBuffer(audioBuffer, options = {}) {
     energies[f] = rms;
     if (rms > peakEnergy) peakEnergy = rms;
     if (rms > 0.004) {
-      const [freq, confidence] = yin(frame, TARGET_RATE);
+      const [freq, confidence] = yin(frame, rate, { f0min: F0_MIN, f0max: F0_MAX, threshold: YIN_THRESHOLD });
       pitches[f] = confidence > 0.55 && freq > F0_MIN && freq < F0_MAX ? freqToMidi(freq) : 0;
     }
-    if ((f & 63) === 0) {
+    if (f % yieldEvery === 0) {
       onProgress(f / Math.max(1, frames));
       await new Promise((r) => setTimeout(r, 0)); // deja respirar a la interfaz
     }
@@ -155,7 +112,7 @@ export async function transcribeBuffer(audioBuffer, options = {}) {
   }
 
   // Segmentación: una nota es un tramo con la misma altura redondeada.
-  const secondsPerFrame = HOP / TARGET_RATE;
+  const secondsPerFrame = HOP / rate;
   const energyGate = Math.max(0.006, peakEnergy * 0.08);
   const segments = [];
   let current = null;
@@ -209,7 +166,7 @@ export async function transcribeBuffer(audioBuffer, options = {}) {
   if (low > notes.length * 0.25) for (const n of notes) if (n.midi < 55) n.hand = 'L';
 
   onProgress(1);
-  return { notes, bpm, detectedBpm, frames, seconds: audioBuffer.duration };
+  return { notes, bpm, detectedBpm, frames, seconds: duration };
 }
 
 /**
@@ -265,10 +222,11 @@ export class AudioCapture {
     this.stream = null;
     this.node = null;
     this.chunks = [];
+    this.leftover = new Float32Array(0);
     this.frames = 0;
     this.startedAt = 0;
     this.onLevel = null;
-    this.maxSeconds = 300;
+    this.maxSeconds = 3600;
     this.onAuto = null;
   }
 
@@ -283,7 +241,7 @@ export class AudioCapture {
   get recording() { return !!this.stream; }
 
   get seconds() {
-    return this.sampleRate ? this.frames / this.sampleRate : 0;
+    return this.frames / TARGET_RATE;
   }
 
   async start(source = 'mic') {
@@ -306,7 +264,10 @@ export class AudioCapture {
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: { ...quality, channelCount: 1 } });
     }
 
-    this.sampleRate = ctx.sampleRate;
+    this.inputRate = ctx.sampleRate;
+    this.ratio = this.inputRate / TARGET_RATE;
+    this.position = 0;
+    this.leftover = new Float32Array(0);
     this.chunks = [];
     this.frames = 0;
     this.startedAt = Date.now();
@@ -319,8 +280,7 @@ export class AudioCapture {
     sink.gain.value = 0; // conectado al destino para que corra, en silencio para no acoplar
     this.node.onaudioprocess = (event) => {
       const data = event.inputBuffer.getChannelData(0);
-      this.chunks.push(new Float32Array(data));
-      this.frames += data.length;
+      this.consume(data);
       if (this.onLevel) {
         let peak = 0;
         for (let i = 0; i < data.length; i += 8) peak = Math.max(peak, Math.abs(data[i]));
@@ -340,22 +300,53 @@ export class AudioCapture {
     return true;
   }
 
-  /** Corta la grabación y devuelve lo grabado como AudioBuffer. */
+  /**
+   * Guarda el trozo que acaba de llegar, ya rebajado a 16 kHz.
+   *
+   * Grabar al ritmo del sistema gastaría tres veces más memoria para nada: el
+   * detector de tono no mira por encima de los 16 kHz. Se arrastra el resto
+   * entre llamadas para que la junta entre trozos no se note.
+   */
+  consume(data) {
+    const input = this.leftover.length
+      ? (() => {
+        const joined = new Float32Array(this.leftover.length + data.length);
+        joined.set(this.leftover, 0);
+        joined.set(data, this.leftover.length);
+        return joined;
+      })()
+      : data;
+
+    const out = [];
+    let position = this.position;
+    while (position + 1 < input.length) {
+      const index = Math.floor(position);
+      const fraction = position - index;
+      out.push(input[index] + (input[index + 1] - input[index]) * fraction);
+      position += this.ratio;
+    }
+    const consumed = Math.min(input.length, Math.floor(position));
+    this.leftover = input.slice(consumed);
+    this.position = position - consumed;
+    if (out.length) {
+      this.chunks.push(Float32Array.from(out));
+      this.frames += out.length;
+    }
+  }
+
+  /** Corta la grabación y devuelve lo grabado: muestras mono a 16 kHz. */
   stop() {
     if (!this.stream) return null;
-    const ctx = this.engine.ctx;
     const total = this.frames;
-    const buffer = total > 0 ? ctx.createBuffer(1, total, this.sampleRate) : null;
-    if (buffer) {
-      const out = buffer.getChannelData(0);
-      let offset = 0;
-      for (const chunk of this.chunks) {
-        out.set(chunk, offset);
-        offset += chunk.length;
-      }
+    const samples = new Float32Array(total);
+    let offset = 0;
+    for (const chunk of this.chunks) {
+      samples.set(chunk, offset);
+      offset += chunk.length;
     }
+    const duration = total / TARGET_RATE;
     this.cleanup();
-    return buffer;
+    return { samples, rate: TARGET_RATE, duration };
   }
 
   cleanup() {
@@ -367,24 +358,279 @@ export class AudioCapture {
     this.stream = null;
     this.node = null;
     this.chunks = [];
+    this.leftover = new Float32Array(0);
   }
 }
 
-/** Lee un archivo de audio (mp3, m4a, wav, ogg...) y lo transcribe. */
-export async function transcribeFile(arrayBuffer, engine, options = {}) {
+/**
+ * Decodifica el archivo a mono y a 16 kHz **durante la propia decodificación**.
+ *
+ * Es lo que permite no poner tope de tamaño: una canción de diez minutos en
+ * estéreo a 44,1 kHz ocuparía más de 200 MB si se decodifica tal cual y tumba
+ * la pestaña en un iPad. Pidiéndole al navegador que decodifique ya a 16 kHz
+ * —que es todo lo que necesita el detector de tono— baja a unos 38 MB.
+ */
+async function decodeToMono(arrayBuffer, engine) {
+  const Offline = typeof window !== 'undefined'
+    && (window.OfflineAudioContext || window.webkitOfflineAudioContext);
+
+  if (Offline) {
+    try {
+      const probe = new Offline(1, 1, TARGET_RATE);
+      const decoded = await probe.decodeAudioData(arrayBuffer.slice(0));
+      const mono = toMono(decoded);
+      return {
+        samples: Math.abs(decoded.sampleRate - TARGET_RATE) < 1
+          ? mono
+          : resample(mono, decoded.sampleRate, TARGET_RATE),
+        duration: decoded.duration,
+      };
+    } catch (e) {
+      // Navegador que no sabe decodificar a ese ritmo: seguimos por el camino normal.
+    }
+  }
+
   const ctx = await engine.ensure();
-  let audioBuffer;
+  let decoded;
   try {
-    audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    decoded = await ctx.decodeAudioData(arrayBuffer);
   } catch (e) {
-    throw new Error('No se pudo leer ese audio. Prueba con un .m4a, .mp3 o .wav.');
+    throw new Error('No se pudo leer ese audio. Prueba con un .mp3, .m4a, .wav, .ogg o .flac.');
   }
-  if (audioBuffer.duration > 360) {
-    throw new Error('El audio es muy largo (más de 6 minutos). Corta el trozo que quieras aprender.');
-  }
-  const result = await transcribeBuffer(audioBuffer, options);
+  return {
+    samples: resample(toMono(decoded), decoded.sampleRate, TARGET_RATE),
+    duration: decoded.duration,
+  };
+}
+
+/** Cuánto va a tardar, más o menos, para poder decirlo antes de empezar. */
+export function estimateWork(seconds, mode = 'melodia') {
+  return Math.max(1, Math.round(seconds * (mode === 'acordes' ? 0.35 : 0.12)));
+}
+
+/** Elige el método y transcribe. Es el único sitio desde el que se llama. */
+export async function transcribeAny(samples, rate, duration, options = {}) {
+  return options.mode === 'acordes'
+    ? transcribePolyphonic(samples, rate, duration, options)
+    : transcribeSamples(samples, rate, duration, options);
+}
+
+/**
+ * Lee un archivo de audio (mp3, m4a, wav, ogg, flac...) y lo transcribe.
+ * `mode`: 'acordes' saca varias notas a la vez, 'melodia' solo una línea.
+ */
+export async function transcribeFile(arrayBuffer, engine, options = {}) {
+  const { samples, duration } = await decodeToMono(arrayBuffer, engine);
+  if (!samples.length) throw new Error('Ese archivo no tiene audio dentro.');
+  const result = await transcribeAny(samples, TARGET_RATE, duration, options);
   if (!result.notes.length) {
     throw new Error('No se encontró ninguna melodía clara. Esto funciona con una sola línea melódica.');
   }
   return result;
+}
+
+// ------------------------------------------------ varias notas a la vez
+
+import { spectrum, midiToFreq } from './pitch.js';
+
+const POLY_FRAME = 4096;   // 256 ms a 16 kHz: hace falta para separar graves
+const POLY_HOP = 512;      // 32 ms entre lecturas
+const POLY_MIN = 28;       // Mi1
+const POLY_MAX = 96;       // Do7
+const HARMONICS = 8;
+const HARMONIC_WEIGHT = Array.from({ length: HARMONICS }, (_, i) => 1 / Math.pow(i + 1, 0.85));
+
+/**
+ * Cuánta señal hay compatible con que suene la nota `midi`.
+ *
+ * No basta mirar su frecuencia: en un piano el fundamental suele ser más flojo
+ * que sus armónicos. Se suma lo que hay en el fundamental y en los siete
+ * armónicos siguientes, cada uno con menos peso. Esa suma —la "saliencia"— es
+ * alta para las notas que de verdad suenan y baja para las que no.
+ */
+function salience(mag, midi, binHz) {
+  const f0 = midiToFreq(midi);
+  let total = 0;
+  for (let h = 1; h <= HARMONICS; h++) {
+    const target = (f0 * h) / binHz;
+    if (target >= mag.length - 1) break;
+    // Media ventana de semitono a cada lado: la afinación nunca es exacta.
+    const span = Math.max(1, Math.round(target * 0.029));
+    let peak = 0;
+    for (let b = Math.max(0, Math.round(target) - span); b <= Math.min(mag.length - 1, Math.round(target) + span); b++) {
+      if (mag[b] > peak) peak = mag[b];
+    }
+    total += peak * HARMONIC_WEIGHT[h - 1];
+  }
+  return total;
+}
+
+/** Quita del espectro lo que explica una nota ya aceptada. */
+function subtractHarmonics(mag, midi, binHz) {
+  const f0 = midiToFreq(midi);
+  let fundamental = 0;
+  for (let h = 1; h <= HARMONICS; h++) {
+    const target = (f0 * h) / binHz;
+    if (target >= mag.length - 1) break;
+    const span = Math.max(1, Math.round(target * 0.029));
+    const from = Math.max(0, Math.round(target) - span);
+    const to = Math.min(mag.length - 1, Math.round(target) + span);
+    let peak = 0;
+    for (let b = from; b <= to; b++) if (mag[b] > peak) peak = mag[b];
+    if (h === 1) fundamental = peak;
+    const expected = Math.min(peak, (fundamental || peak) * HARMONIC_WEIGHT[h - 1] * 1.3);
+    for (let b = from; b <= to; b++) mag[b] = Math.max(0, mag[b] - expected * 0.9);
+  }
+}
+
+/**
+ * Las notas que suenan en un instante: hasta `maxNotes`, de más a menos clara.
+ *
+ * Dos trampas conocidas de este método, y lo que se hace con cada una:
+ *
+ * - **El vecino de semitono.** Al restar una nota queda ruido alrededor y el
+ *   semitono de al lado se cuela. En música real dos semitonos juntos son
+ *   raros, y el falso positivo molesta más que el raro que se pierde, así que
+ *   se bloquean.
+ * - **El subarmónico de abajo.** Una nota una octava o una docena por debajo
+ *   "explica" sus propios armónicos con lo que ya suena, y aparece de la nada.
+ *   Se le exige mucha más evidencia que a las demás.
+ */
+function framePitches(mag, binHz, maxNotes, floor) {
+  const working = Float32Array.from(mag);
+  const found = [];
+  const blocked = new Set();
+  let firstScore = 0;
+
+  for (let round = 0; round < maxNotes; round++) {
+    let best = 0;
+    let bestScore = 0;
+    for (let midi = POLY_MIN; midi <= POLY_MAX; midi++) {
+      if (blocked.has(midi)) continue;
+      let score = salience(working, midi, binHz);
+      // Candidata por debajo de algo ya aceptado, con la octava o la docena
+      // justo encima: casi siempre es un fantasma del bajo.
+      if (found.some((f) => f.midi - midi === 12 || f.midi - midi === 19 || f.midi - midi === 24)) {
+        score *= 0.45;
+      }
+      // Y lo que aparece muy por debajo de un bajo ya aceptado tampoco suele
+      // existir: el bajo de verdad se oye primero, no el cuarto.
+      if (found.length && midi < Math.min(...found.map((f) => f.midi)) - 6) {
+        score *= 0.5;
+      }
+      if (score > bestScore) { bestScore = score; best = midi; }
+    }
+    if (!best) break;
+    if (!round) firstScore = bestScore;
+    // Las notas de un acorde pesan parecido; lo que queda muy por debajo de la
+    // más clara es residuo, no música.
+    if (bestScore < Math.max(floor, firstScore * 0.3)) break;
+
+    found.push({ midi: best, score: bestScore });
+    blocked.add(best);
+    blocked.add(best - 1);
+    blocked.add(best + 1);
+    subtractHarmonics(working, best, binHz);
+  }
+  return found;
+}
+
+/**
+ * Transcripción polifónica: saca acordes y bajo, no solo la melodía.
+ *
+ * Es un estimador de varias frecuencias por saliencia armónica con resta
+ * iterativa: se queda con la nota más clara, borra del espectro lo que esa
+ * nota explica, y repite. No es un modelo entrenado —eso vive en un servidor y
+ * aquí no hay servidor— pero sí oye acordes, que es lo que el detector de
+ * melodía no podía hacer.
+ */
+export async function transcribePolyphonic(mono, rate, duration, options = {}) {
+  const quantize = options.quantize != null ? options.quantize : 0.25;
+  const maxNotes = options.maxNotes || 5;
+  const onProgress = options.onProgress || (() => {});
+  const binHz = rate / POLY_FRAME;
+  const frames = Math.max(0, Math.floor((mono.length - POLY_FRAME) / POLY_HOP));
+  const secondsPerFrame = POLY_HOP / rate;
+  const yieldEvery = frames > 4000 ? 64 : 16;
+
+  // Primera vuelta: energía por tramo, para saber dónde hay música.
+  const energies = new Float32Array(frames);
+  let peakEnergy = 1e-9;
+  for (let f = 0; f < frames; f++) {
+    let sum = 0;
+    const start = f * POLY_HOP;
+    for (let i = 0; i < POLY_FRAME; i += 4) sum += mono[start + i] * mono[start + i];
+    energies[f] = Math.sqrt(sum / (POLY_FRAME / 4));
+    if (energies[f] > peakEnergy) peakEnergy = energies[f];
+  }
+  const energyGate = Math.max(0.004, peakEnergy * 0.06);
+
+  const active = new Map(); // midi -> { startFrame, lastFrame, score }
+  const segments = [];
+  const close = (midi, entry, endFrame) => {
+    const length = endFrame - entry.startFrame;
+    if (length >= 3) segments.push({ midi, startFrame: entry.startFrame, frames: length, score: entry.score });
+  };
+
+  for (let f = 0; f < frames; f++) {
+    if (f % yieldEvery === 0) {
+      onProgress(f / Math.max(1, frames));
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    if (energies[f] < energyGate) {
+      for (const [midi, entry] of active) close(midi, entry, f);
+      active.clear();
+      continue;
+    }
+    const mag = spectrum(mono.subarray(f * POLY_HOP, f * POLY_HOP + POLY_FRAME), POLY_FRAME);
+    let frameTotal = 0;
+    for (let i = 0; i < mag.length; i++) frameTotal += mag[i];
+    const floor = (frameTotal / mag.length) * 8;
+
+    const pitches = framePitches(mag, binHz, maxNotes, floor);
+    const seen = new Set(pitches.map((p) => p.midi));
+    for (const { midi, score } of pitches) {
+      const entry = active.get(midi);
+      if (entry) {
+        entry.lastFrame = f;
+        entry.score = Math.max(entry.score, score);
+      } else {
+        active.set(midi, { startFrame: f, lastFrame: f, score });
+      }
+    }
+    for (const [midi, entry] of [...active]) {
+      // Un hueco de un solo tramo no corta la nota: el espectro parpadea.
+      if (!seen.has(midi) && f - entry.lastFrame > 1) {
+        close(midi, entry, entry.lastFrame + 1);
+        active.delete(midi);
+      }
+    }
+  }
+  for (const [midi, entry] of active) close(midi, entry, frames);
+
+  const detectedBpm = estimateTempo(energies, secondsPerFrame);
+  const bpm = options.bpm ? Math.max(30, Math.min(220, options.bpm)) : (detectedBpm || 100);
+  const beatsPerSecond = bpm / 60;
+
+  const notes = [];
+  for (const seg of segments) {
+    let t = seg.startFrame * secondsPerFrame * beatsPerSecond;
+    let d = seg.frames * secondsPerFrame * beatsPerSecond;
+    if (quantize > 0) {
+      t = Math.round(t / quantize) * quantize;
+      d = Math.max(quantize, Math.round(d / quantize) * quantize);
+    }
+    notes.push({ t, d, midi: seg.midi, vel: 0.75, hand: 'R' });
+  }
+  notes.sort((a, b) => a.t - b.t || a.midi - b.midi);
+  if (notes.length) {
+    const offset = notes[0].t;
+    for (const n of notes) n.t -= offset;
+  }
+  // La izquierda se queda lo grave cuando hay suficiente material abajo.
+  const low = notes.filter((n) => n.midi < 55).length;
+  if (low > notes.length * 0.2) for (const n of notes) if (n.midi < 55) n.hand = 'L';
+
+  onProgress(1);
+  return { notes, bpm, detectedBpm, frames, seconds: duration };
 }

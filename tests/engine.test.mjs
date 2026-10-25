@@ -4,8 +4,11 @@ import assert from 'node:assert/strict';
 import { buildSong, parseLine, nameFromMidi, midiFromName, transposeSong, autoSections,
   fitToRange, pianoRange, PIANO_SIZES, notesOutside, describeTranspose } from '../src/score.js';
 import { songToMidiBytes, songFromMidi, estimateDifficulty } from '../src/midi.js';
-import { estimateTempo } from '../src/transcribe.js';
-import { buildLayout, wholeOctaves, keyAt, computerKeyToMidi } from '../src/keyboard.js';
+import { estimateTempo, transcribePolyphonic, transcribeSamples, estimateWork } from '../src/transcribe.js';
+import { detectPitch, midiToFreq, freqToMidi, yin, rms, spectrum } from '../src/pitch.js';
+import { MicInput } from '../src/mic.js';
+import { buildLayout, wholeOctaves, keyAt, computerKeyToMidi,
+  clampOffset, offsetToCenter, whiteWidthFor, countWhites } from '../src/keyboard.js';
 import { Player, WINDOWS } from '../src/player.js';
 import { keyboardMarks, barHeatmap } from '../src/roll.js';
 import { CATALOG, applyWrittenFingers } from '../src/songs.js';
@@ -199,6 +202,218 @@ test('el tempo se detecta solo a partir de los ataques', () => {
   assert.equal(estimateTempo(new Float32Array(4), secondsPerFrame), 0, 'muy poco audio no tiene tempo');
 });
 
+// ------------------------------------------------------------- afinación
+/** Una nota de piano de mentira: fundamental más sus armónicos. */
+function tone(midi, { samples = 4096, rate = 44100, noise = 0, decay = 0 } = {}) {
+  const f = midiToFreq(midi);
+  const out = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) {
+    const t = i / rate;
+    const envelope = decay ? Math.exp(-decay * t) : 1;
+    out[i] = envelope * (1 - noise) * (
+      0.6 * Math.sin(2 * Math.PI * f * t)
+      + 0.3 * Math.sin(4 * Math.PI * f * t)
+      + 0.16 * Math.sin(6 * Math.PI * f * t)
+      + 0.08 * Math.sin(8 * Math.PI * f * t)
+      + 0.04 * Math.sin(10 * Math.PI * f * t)
+    ) + (noise ? (Math.random() * 2 - 1) * noise : 0);
+  }
+  return out;
+}
+
+test('reconoce todas las notas de Mi1 a Do7', () => {
+  const wrong = [];
+  for (let midi = 28; midi <= 96; midi++) {
+    const got = detectPitch(tone(midi), 44100).midi;
+    if (got !== midi) wrong.push(`${midi}->${got}`);
+  }
+  assert.deepEqual(wrong, [], `falla en: ${wrong.join(' ')}`);
+});
+
+test('no se va una octava abajo en las notas agudas', () => {
+  // Es el error clásico de este tipo de detector, y el que tenía antes.
+  for (const midi of [84, 88, 91, 93, 96]) {
+    const got = detectPitch(tone(midi), 44100).midi;
+    assert.equal(got, midi, `${midi} se detectó como ${got}`);
+  }
+});
+
+test('aguanta el ruido de una sala normal', () => {
+  const wrong = [];
+  for (let midi = 33; midi <= 93; midi += 2) {
+    if (detectPitch(tone(midi, { noise: 0.12 }), 44100).midi !== midi) wrong.push(midi);
+  }
+  assert.ok(wrong.length === 0, `con ruido falla en: ${wrong.join(' ')}`);
+});
+
+test('dice si la nota está afinada y cuánto se desvía', () => {
+  const rate = 44100;
+  const sharp = new Float32Array(4096);
+  const f = midiToFreq(69) * Math.pow(2, 40 / 1200); // La4 cuarenta centésimas alto
+  for (let i = 0; i < sharp.length; i++) {
+    const t = i / rate;
+    sharp[i] = 0.6 * Math.sin(2 * Math.PI * f * t) + 0.3 * Math.sin(4 * Math.PI * f * t);
+  }
+  const result = detectPitch(sharp, rate);
+  assert.equal(result.midi, 69);
+  assert.ok(Math.abs(result.cents - 40) < 12, `desviación mal medida: ${result.cents}`);
+});
+
+test('el silencio no inventa notas', () => {
+  const quiet = new Float32Array(4096);
+  for (let i = 0; i < quiet.length; i++) quiet[i] = (Math.random() * 2 - 1) * 0.001;
+  assert.equal(detectPitch(quiet, 44100).midi, 0);
+  assert.ok(rms(quiet) < 0.01);
+});
+
+test('la transformada encuentra el pico donde toca', () => {
+  const rate = 16000;
+  const n = 4096;
+  const wave = new Float32Array(n);
+  for (let i = 0; i < n; i++) wave[i] = Math.sin((2 * Math.PI * 440 * i) / rate);
+  const mag = spectrum(wave, n);
+  let peak = 0;
+  let index = 0;
+  for (let i = 1; i < mag.length; i++) if (mag[i] > peak) { peak = mag[i]; index = i; }
+  assert.ok(Math.abs((index * rate) / n - 440) < 5, `pico en ${(index * rate) / n} Hz`);
+});
+
+test('YIN coge el primer mínimo, no el más profundo', () => {
+  // Con armónicos fuertes, el mínimo más profundo cae en el doble de periodo.
+  const [freq] = yin(tone(64, { rate: 22050, samples: 2048 }), 22050, { f0min: 50, f0max: 1100 });
+  assert.equal(Math.round(freqToMidi(freq)), 64);
+});
+
+// ------------------------------------------------ acordes, no solo melodía
+/** Un acorde de piano de mentira, con el decaimiento de una cuerda pulsada. */
+function chordSamples(midis, seconds, rate = 16000) {
+  const n = Math.floor(rate * seconds);
+  const out = new Float32Array(n);
+  for (const midi of midis) {
+    const f = midiToFreq(midi);
+    for (let i = 0; i < n; i++) {
+      const t = i / rate;
+      const envelope = Math.exp(-1.1 * t);
+      out[i] += envelope * (
+        0.5 * Math.sin(2 * Math.PI * f * t)
+        + 0.3 * Math.sin(4 * Math.PI * f * t)
+        + 0.18 * Math.sin(6 * Math.PI * f * t)
+        + 0.09 * Math.sin(8 * Math.PI * f * t)
+        + 0.04 * Math.sin(10 * Math.PI * f * t)
+      ) / Math.sqrt(midis.length);
+    }
+  }
+  return out;
+}
+
+function joinChords(chords, seconds = 1, rate = 16000) {
+  const parts = chords.map((c) => chordSamples(c, seconds, rate));
+  const total = parts.reduce((sum, p) => sum + p.length, 0);
+  const mono = new Float32Array(total);
+  let offset = 0;
+  for (const part of parts) { mono.set(part, offset); offset += part.length; }
+  return { mono, duration: total / rate };
+}
+
+/** Qué notas salieron en cada acorde, agrupadas por su hueco de tiempo. */
+function pitchesBySlot(notes) {
+  const slots = new Map();
+  for (const n of notes) {
+    const slot = Math.round(n.t);
+    if (!slots.has(slot)) slots.set(slot, new Set());
+    slots.get(slot).add(n.midi);
+  }
+  return slots;
+}
+
+test('saca las tres notas de un acorde, no solo la de arriba', async () => {
+  const chords = [[60, 64, 67], [62, 65, 69], [64, 67, 71]];
+  const { mono, duration } = joinChords(chords);
+  const result = await transcribePolyphonic(mono, 16000, duration, { bpm: 60, quantize: 0.5 });
+  const slots = pitchesBySlot(result.notes);
+  chords.forEach((expected, i) => {
+    const got = [...(slots.get(i) || [])].sort((a, b) => a - b);
+    assert.deepEqual(got, expected, `acorde ${i}: esperaba ${expected} y salió ${got}`);
+  });
+});
+
+test('no se inventa notas que no están', async () => {
+  const chords = [[60, 64, 67], [48, 55, 64], [45, 52, 57, 61], [53, 57, 60, 65]];
+  const { mono, duration } = joinChords(chords);
+  const result = await transcribePolyphonic(mono, 16000, duration, { bpm: 60, quantize: 0.5 });
+  const slots = pitchesBySlot(result.notes);
+  let spurious = 0;
+  let hit = 0;
+  chords.forEach((expected, i) => {
+    const want = new Set(expected);
+    for (const midi of slots.get(i) || []) {
+      if (want.has(midi)) hit += 1;
+      else spurious += 1;
+    }
+  });
+  assert.equal(spurious, 0, `se inventó ${spurious} notas`);
+  const total = chords.reduce((sum, c) => sum + c.length, 0);
+  assert.ok(hit >= total * 0.8, `acierto bajo: ${hit} de ${total}`);
+});
+
+test('el modo acordes también saca bien una melodía sola', async () => {
+  const notes = [[60], [64], [67], [72]];
+  const { mono, duration } = joinChords(notes);
+  const result = await transcribePolyphonic(mono, 16000, duration, { bpm: 60, quantize: 0.5 });
+  const got = [...new Set(result.notes.map((n) => n.midi))].sort((a, b) => a - b);
+  assert.deepEqual(got, [60, 64, 67, 72]);
+});
+
+test('el silencio no produce acordes', async () => {
+  const quiet = new Float32Array(16000 * 2);
+  for (let i = 0; i < quiet.length; i++) quiet[i] = (Math.random() * 2 - 1) * 0.0008;
+  const result = await transcribePolyphonic(quiet, 16000, 2, { bpm: 60 });
+  assert.equal(result.notes.length, 0);
+});
+
+test('buscar acordes se avisa como más lento que buscar melodía', () => {
+  assert.ok(estimateWork(120, 'acordes') > estimateWork(120, 'melodia'));
+});
+
+// --------------------------------------------------------------- micrófono
+test('el micrófono sigue una melodía entera sin equivocarse', () => {
+  const rate = 44100;
+  const FRAME = 4096;
+  let clock = 0;
+  const previous = { raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame, now: globalThis.performance };
+  globalThis.requestAnimationFrame = () => 0;
+  globalThis.cancelAnimationFrame = () => {};
+  globalThis.performance = { now: () => clock };
+  try {
+    const mic = new MicInput({ ensure: async () => ({ sampleRate: rate }) });
+    mic.sampleRate = rate;
+    mic.data = new Float32Array(FRAME);
+    mic.analyser = { fftSize: FRAME, getFloatTimeDomainData: (a) => a.set(mic.data) };
+    const on = [];
+    const off = [];
+    mic.onNoteOn = (midi) => on.push(midi);
+    mic.onNoteOff = (midi) => off.push(midi);
+
+    const melody = [60, 62, 64, 65, 67, 69, 71, 72, 48, 84];
+    for (const midi of melody) {
+      const sound = tone(midi, { samples: FRAME * 7, decay: 1.2 });
+      for (let frame = 0; frame < 7; frame++) {
+        mic.data.set(sound.subarray(frame * FRAME, (frame + 1) * FRAME));
+        clock += 93;
+        mic.loop();
+      }
+      mic.data.fill(0.0006);
+      for (let frame = 0; frame < 4; frame++) { clock += 93; mic.loop(); }
+    }
+    assert.deepEqual(on, melody, 'las notas detectadas no son las tocadas');
+    assert.equal(off.length, melody.length, 'alguna nota se quedó sin soltar');
+  } finally {
+    globalThis.requestAnimationFrame = previous.raf;
+    globalThis.cancelAnimationFrame = previous.caf;
+    globalThis.performance = previous.now;
+  }
+});
+
 // ----------------------------------------------------------------- midi
 test('MIDI: ida y vuelta conserva notas, tempo y compás', () => {
   for (const id of ['minueto-sol', 'fur-elise', 'preludio-do', 'claro-de-luna']) {
@@ -235,16 +450,55 @@ test('la dificultad estimada crece con la densidad', () => {
 });
 
 // ------------------------------------------------------------- teclado
-test('el teclado alinea cada tecla negra con su junta', () => {
-  const { lo, hi } = wholeOctaves(60, 72);
-  const layout = buildLayout(lo, hi, 700);
-  assert.equal(layout.whiteCount, 8);
+test('el teclado tiene las proporciones de un piano, no de una rejilla', () => {
+  const W = 60;
+  const layout = buildLayout(60, 83, W); // dos octavas desde Do4
+  assert.equal(layout.whites, 14);
+  assert.equal(layout.contentWidth, 14 * W);
+
+  // Las negras miden poco más de la mitad que las blancas.
+  assert.ok(Math.abs(layout.key(61).w / W - 0.55) < 0.001, 'ancho de negra');
+
+  // La tapa del Re queda centrada sobre su cuerpo: Do# y Re# son simétricos.
+  const d = layout.key(62);
+  assert.ok(Math.abs((d.topX + d.topW / 2) - (d.x + d.w / 2)) < 0.001, 'la tapa del Re no está centrada');
+
+  // Sol# sí cae justo en la junta Sol|La; las otras cuatro negras, no.
+  const gSharp = layout.key(68);
+  assert.ok(Math.abs((gSharp.x + gSharp.w / 2) - (layout.key(67).x + W)) < 0.001, 'Sol# fuera de su junta');
+  const cSharp = layout.key(61);
+  assert.ok(Math.abs((cSharp.x + cSharp.w / 2) - (layout.key(60).x + W)) > 1, 'Do# no debería estar centrado en la junta');
+
+  // Do y Mi son espejo el uno del otro, como en el instrumento.
+  assert.ok(Math.abs(layout.key(60).topW - layout.key(64).topW) < 0.001, 'Do y Mi deberían ser espejo');
+  // Y la tapa del Re es la más estrecha del grupo Do-Re-Mi.
+  assert.ok(d.topW < layout.key(60).topW, 'la tapa del Re debería ser la más estrecha');
+});
+
+test('tocar acierta la tecla, también con el teclado deslizado', () => {
+  const layout = buildLayout(60, 83, 60);
+  const cSharp = layout.key(61);
+  assert.equal(keyAt(layout, cSharp.x + 2, 110, 100, 100, 0), 61, 'la negra debería ganar arriba');
+  assert.equal(keyAt(layout, cSharp.x + 2, 190, 100, 100, 0), 60, 'abajo debería tocar la blanca');
+  // Con el teclado corrido 300 px, el mismo punto de pantalla cae en otra tecla.
+  const f4 = layout.key(65);
+  assert.equal(keyAt(layout, f4.x - 300 + 2, 190, 100, 100, 300), 65, 'el desplazamiento no se tiene en cuenta');
+});
+
+test('el desplazamiento no se sale del teclado', () => {
+  const layout = buildLayout(21, 108, 40);
+  const view = 700;
+  assert.equal(clampOffset(layout, view, -50), 0);
+  assert.equal(clampOffset(layout, view, 1e9), layout.contentWidth - view);
+  // Centrar un grupo de notas deja el grupo dentro de la ventana.
+  const offset = offsetToCenter(layout, view, [60, 64, 67]);
   const c4 = layout.key(60);
-  const cs4 = layout.key(61);
-  assert.ok(cs4.black && !c4.black);
-  assert.ok(Math.abs((cs4.x + cs4.w / 2) - (c4.x + c4.w)) < 0.001, 'la negra no está centrada en la junta');
-  assert.equal(keyAt(layout, cs4.x + 2, 110, 100, 100), 61, 'la negra debería ganar arriba');
-  assert.equal(keyAt(layout, cs4.x + 2, 190, 100, 100), 60, 'abajo debería tocar la blanca');
+  assert.ok(c4.x >= offset - 1 && c4.x <= offset + view, 'el Do4 quedó fuera de la vista');
+});
+
+test('el ancho de tecla sale de cuántas quieres ver', () => {
+  assert.equal(whiteWidthFor(880, 11), 80);
+  assert.ok(whiteWidthFor(880, 1) <= 880 / 3, 'nunca menos de tres teclas a la vista');
 });
 
 test('las teclas del ordenador cubren dos octavas', () => {

@@ -18,6 +18,10 @@
   --c-danger: #ff7a7a;
   --c-success: #5fe08f;
   --c-warn: #ffd166;
+  --c-hand-right-cb: #64b5ff;
+  --c-hand-left-cb: #ffb000;
+  --c-hand-right-hi: #ffffff;
+  --c-hand-left-hi: #ffe14d;
 
   --r-sm: 8px;
   --r-md: 14px;
@@ -539,3 +543,14 @@ fieldset.field legend, .label {
   border-left: 3px solid var(--c-warn);
   border-radius: var(--r-sm); padding: var(--s3); margin: 0 0 var(--s5);
 }
+
+/* ------------------------------------------------ lo que oye el micrófono */
+.heard {
+  display: flex; align-items: baseline; gap: var(--s3);
+  background: var(--c-surface-2); border: 1px solid var(--c-border);
+  border-radius: var(--r-md); padding: var(--s3) var(--s4); margin-bottom: var(--s2);
+}
+.heard b { font-size: 30px; font-variant-numeric: tabular-nums; min-width: 3.2em; }
+.heard span { color: var(--c-text-muted); font-size: 14px; }
+.heard[data-tuned="yes"] b { color: var(--c-success); }
+.heard[data-tuned="off"] b { color: var(--c-warn); }

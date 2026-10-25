@@ -66,6 +66,7 @@ function wireSongDetail() {
     ui.renderSongDetail();
     ui.renderLibrary();
   });
+  $('#song-rename').addEventListener('click', ui.renameCurrentSong);
   $('#song-export').addEventListener('click', ui.exportCurrentSongAsMidi);
   $('#song-delete').addEventListener('click', async () => {
     const song = state.song;
@@ -179,6 +180,7 @@ function wireAddSheet() {
     $('#transcribe-bpm-out').textContent = ev.target.value;
   });
   segmented('#transcribe-grid', 'grid', () => {});
+  segmented('#transcribe-mode', 'mode2', () => {});
 }
 
 function wireFree() {
@@ -237,8 +239,37 @@ function wireSettings() {
   segmented('#set-labels', 'labels', (value) => {
     state.settings = store.saveSettings({ labels: value });
   });
+  $('#set-mic-sensitivity').addEventListener('input', (ev) => {
+    const value = Number(ev.target.value);
+    state.settings = store.saveSettings({ micSensitivity: value });
+    $('#set-mic-sensitivity-out').textContent = value < 34 ? 'baja' : value > 66 ? 'alta' : 'media';
+    if (state.micInput) state.micInput.sensitivity = value / 100;
+  });
   const setInput = segmented('#set-input', 'input', (value) => { ui.setInputMode(value); });
   ui.setInputSegmentSetter(setInput);
+
+  // Notas que caen: todo lo que cambia cómo se ve y se lee esa zona.
+  const rollSetting = (id, key, read, format) => {
+    $(id).addEventListener('input', (ev) => {
+      const value = read(ev.target);
+      state.settings = store.saveSettings({ [key]: value });
+      if (format) $(`${id}-out`).textContent = format(value);
+    });
+  };
+  rollSetting('#set-lookahead', 'lookAheadSeconds', (el) => Number(el.value) / 10,
+    (v) => `${v.toFixed(1).replace('.', ',')} s`);
+  rollSetting('#set-keys-visible', 'keysVisible', (el) => Number(el.value),
+    (v) => (v ? `${v} blancas` : 'todas las que haga falta'));
+  rollSetting('#set-kb-height', 'keyboardHeight', (el) => Number(el.value), (v) => `${v} %`);
+  for (const [id, key] of [['#set-autofollow', 'autoFollow'], ['#set-grid', 'showGrid'], ['#set-glow', 'showGlow']]) {
+    $(id).addEventListener('change', (ev) => {
+      state.settings = store.saveSettings({ [key]: ev.target.checked });
+      if (key === 'autoFollow' && ev.target.checked) state.pan.auto = true;
+    });
+  }
+  segmented('#set-palette', 'palette', (value) => {
+    state.settings = store.saveSettings({ palette: value });
+  });
 
   // Tu piano: el tamaño, dónde empieza y qué pasa con lo que no cabe.
   const afterPianoChange = () => {
@@ -386,6 +417,8 @@ function exposeDebugHook() {
   window.__cascada = {
     get player() { return state.player; },
     get state() { return state; },
+    geometry: () => ui.playerGeometry(),
+    pan: (offset) => ui.panTo(offset),
     press: (midi, velocity = 0.9) => ui.handleNoteOn(midi, velocity, 'test'),
     release: (midi) => ui.handleNoteOff(midi, 'test'),
     store,

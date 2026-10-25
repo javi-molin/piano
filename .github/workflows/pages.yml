@@ -53,6 +53,15 @@ jobs:
           cp index.html styles.css manifest.webmanifest sw.js _site/
           cp -r src assets _site/
           cp README.md _site/ 2>/dev/null || true
+      - name: Sellar la versión del caché con el commit
+        run: |
+          set -euo pipefail
+          marca="cascada-${GITHUB_SHA:0:8}"
+          sed -i "s/const VERSION = 'cascada-dev';/const VERSION = '$marca';/" _site/sw.js
+          # Si no se pudo sellar, mejor fallar que publicar algo que los
+          # dispositivos ya instalados no van a actualizar nunca.
+          grep -q "const VERSION = '$marca';" _site/sw.js
+          echo "Service worker sellado como $marca"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

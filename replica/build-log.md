@@ -28,6 +28,12 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
 | 2026-10-25 | Tu piano (ajustes) | hecho | 25 a 88 teclas, nota más grave ajustable por octavas, y qué hacer con lo que no cabe: omitirlo o plegarlo a la octava más cercana. El detalle de la canción dice cuántas notas se movieron. |
 | 2026-10-25 | Tono por octavas | hecho | ±24 semitonos con botones de octava y de semitono, explicado en palabras, recordado por canción. |
 | 2026-10-25 | S04 Enlaces de streaming | **parcial, a propósito** | Reconoce YouTube, Spotify y SoundCloud, lee el título por su oEmbed público y lleva a los dos caminos que sí funcionan. La conversión directa desde el enlace no se puede hacer sin servidor; está dicho en la propia pantalla. |
+| 2026-10-25 | Transcripción de acordes | hecho | Estimador de varias frecuencias por saliencia armónica con resta iterativa. 28 de 32 notas en el banco de acordes, cero inventadas. Elegible junto al modo melodía. |
+| 2026-10-25 | Teclado de piano real | hecho | Posiciones y proporciones reales, blancas recortadas, deslizable, ampliable y con seguimiento automático. |
+| 2026-10-25 | Ajustes de las notas que caen | hecho | Anticipación, teclas a la vista, alto del teclado, paleta de manos (con una apta para daltonismo), rejilla de compases y brillo. |
+| 2026-10-25 | Micrófono fiable | hecho | Autocorrelación en dos pasadas, sensibilidad ajustable y lo que oye, en pantalla. |
+| 2026-10-25 | Títulos de los MIDI | hecho | Tres codificaciones probadas en orden, descarte de lo ilegible y renombrar a mano. |
+| 2026-10-25 | Audio sin límites | hecho | Fuera el tope de 25 MB y el de 6 minutos. Para que "sin límite" sea verdad y no una promesa, el audio se decodifica ya a 16 kHz: una canción de diez minutos pasa de ocupar más de 200 MB a unos 38, que es lo que separa funcionar de tumbar la pestaña en un iPad. Se aceptan mp3, m4a, wav, ogg y flac, y varios archivos de golpe. |
 | 2026-10-25 | Escuchar y transcribir | hecho | Grabación por micrófono (o del sonido de otra pestaña donde el navegador lo permita) y transcripción con tempo detectado solo. |
 
 ## Lo que costó más de lo que parecía
@@ -58,6 +64,62 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
   servicio (sin clave, sin cuenta), ofrecer la búsqueda de un MIDI —que es lo exacto— y
   grabar la canción mientras suena para sacarla de oído. De un enlace pegado a algo que
   tocar hay dos toques.
+
+## Acordes: hasta dónde llega esto sin un servidor
+
+El transcriptor sacaba una sola línea melódica. Ahora hay un segundo método que saca varias
+notas a la vez: por cada instante calcula, para cada nota posible, cuánta señal hay compatible
+con que esa nota suene —sumando su fundamental y siete armónicos, con peso decreciente—, se
+queda con la más clara, **borra del espectro lo que esa nota explica**, y repite.
+
+Medido sobre diez acordes sintéticos conocidos: **28 de 32 notas, sin inventarse ninguna**.
+Las cuatro que faltan son el límite real del método, no un descuido: una nota tapada por
+otra una octava o una quinta justo encima comparte con ella todos sus armónicos, así que al
+restar la primera desaparece la segunda. Eso lo resuelve un modelo entrenado, que es lo que
+usa la app original, y que necesita un servidor.
+
+Dos trampas costaron la mitad del trabajo y las dos están comentadas en el código: el vecino
+de semitono, que se cuela con el ruido que deja la resta, y el fantasma por debajo del bajo,
+que "explica" sus propios armónicos con lo que ya suena.
+
+## El teclado tenía que ser un piano, no una rejilla
+
+Las negras estaban centradas en la junta entre dos blancas. Es lo que sale si uno lo piensa
+como una cuadrícula, y es justo lo que hace que un teclado dibujado "no se lea". En un piano
+Do# y Re# se reparten simétricos alrededor del Re, y Fa#, Sol# y La# alrededor del Sol#, que
+sí cae en su junta; de ahí que las tapas de las blancas tengan anchos distintos. Ahora están
+donde tienen que estar, las blancas se dibujan con su silueta recortada, y la proporción de
+la negra es 0,55 del ancho de la blanca.
+
+Encima, el teclado se mueve: se puede decir cuántas teclas se quieren ver a la vez, y si no
+caben todas se desliza —arrastrando la barra de arriba o arrastrando sobre las propias
+notas— y además sigue solo a la canción, con el seguimiento en pausa unos segundos cuando lo
+mueves tú.
+
+## Oír una nota no es mirar el pico más alto
+
+El micrófono buscaba picos en el espectro. En un piano eso falla: los armónicos suenan más
+fuerte que el fundamental, así que un Mi4 se detectaba como Mi3. Ahora mide cada cuánto se
+repite la onda, con dos pasadas —una ventana larga para el grave y muestreo fino para el
+agudo— porque ninguna de las dos sola cubre el piano entero: con la ventana del grave, un
+Do7 se canta una octava más abajo.
+
+Resultado medido: las 69 notas de Mi1 a Do7, exactas, y también con un 12 % de ruido encima.
+En pantalla se ve lo que oye, con la desviación en centésimas, para poder comprobarlo en dos
+segundos en vez de confiar.
+
+## Quitar un límite es trabajo, no borrar una línea
+
+Quitar el `if (file.size > 25 MB)` habría durado un segundo y habría cambiado un mensaje de
+error por una pestaña muerta. Lo que de verdad costaba era el consumo: `decodeAudioData`
+deja el archivo entero en memoria como float, y diez minutos en estéreo a 44,1 kHz son más
+de 200 MB. La salida fue pedirle al navegador que decodifique **directamente a 16 kHz** con
+un `OfflineAudioContext` —que es todo lo que necesita el detector de tono— y quedarse en
+unos 38 MB. La grabación hace lo mismo mientras graba, remuestreando sobre la marcha y
+arrastrando el resto entre trozos para que la junta no se oiga.
+
+Lo que sigue creciendo con la duración es el tiempo: unos 12 segundos de análisis por cada
+minuto de audio. Eso no se esconde, se dice antes de empezar y se ve en la barra.
 
 ## Lo que se dejó fuera, y por qué
 
