@@ -196,3 +196,150 @@ export function detectPitch(frame, rate, options = {}) {
   if (midi < 21 || midi > 108) return { midi: 0, freq, confidence };
   return { midi, freq, confidence, cents: Math.round((freqToMidi(freq) - midi) * 100) };
 }
+
+/**
+ * Goertzel: cuánta energía hay exactamente en una frecuencia.
+ *
+ * Es una FFT de un solo punto, y cuesta casi nada. Sirve para contrastar lo
+ * que dice el detector de periodo: si alguien afirma que suena un La1, en esa
+ * frecuencia tiene que haber algo de verdad.
+ */
+export function goertzel(samples, rate, freq) {
+  const k = (2 * Math.PI * freq) / rate;
+  const coeff = 2 * Math.cos(k);
+  let s1 = 0;
+  let s2 = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const s0 = samples[i] + coeff * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - coeff * s1 * s2)) / samples.length;
+}
+
+/**
+ * ¿Suena de verdad esa nota, o es el eco de varias juntas?
+ *
+ * Cuando dos o tres cuerdas resuenan a la vez —y en un piano con pedal eso es
+ * lo normal— la onda que resulta se repite con un periodo largo que no
+ * corresponde a ninguna tecla. El detector de periodo se agarra a él y canta
+ * una nota grave que nadie ha tocado. La diferencia está en el fundamental:
+ * una nota real tiene energía en su propia frecuencia; el fantasma no, solo la
+ * tiene en los múltiplos.
+ */
+export function hasFundamental(samples, rate, freq, minRatio = 0.1) {
+  if (freq <= 0) return true;
+  const base = goertzel(samples, rate, freq);
+  const second = goertzel(samples, rate, freq * 2);
+  const third = goertzel(samples, rate, freq * 3);
+  const strongest = Math.max(second, third);
+  if (strongest <= 0) return base > 0;
+  return base / strongest >= minRatio;
+}
+
+// ------------------------------------ varias notas a la vez (saliencia)
+
+export const POLY_MIN = 28;  // Mi1
+export const POLY_MAX = 96;  // Do7
+const HARMONICS = 8;
+const HARMONIC_WEIGHT = Array.from({ length: HARMONICS }, (_, i) => 1 / Math.pow(i + 1, 0.85));
+
+/**
+ * Cuánta señal hay compatible con que suene la nota `midi`.
+ *
+ * No basta mirar su frecuencia: en un piano el fundamental suele ser más flojo
+ * que sus armónicos. Se suma lo que hay en el fundamental y en los siete
+ * armónicos siguientes, cada uno con menos peso. Esa suma —la "saliencia"— es
+ * alta para las notas que de verdad suenan y baja para las que no.
+ */
+export function salience(mag, midi, binHz) {
+  const f0 = midiToFreq(midi);
+  let total = 0;
+  for (let h = 1; h <= HARMONICS; h++) {
+    const target = (f0 * h) / binHz;
+    if (target >= mag.length - 1) break;
+    // La ventana crece con el armónico. En una cuerda real los parciales no
+    // caen en múltiplos exactos del fundamental —la cuerda tiene rigidez— y
+    // la desviación crece con el número de armónico, mucho en los graves. Con
+    // ventana fija, los parciales altos se escapan, no se restan, y el
+    // detector los canta como si fueran notas aparte.
+    const span = Math.max(1, Math.round(target * (0.029 + 0.005 * h)));
+    let peak = 0;
+    for (let b = Math.max(0, Math.round(target) - span); b <= Math.min(mag.length - 1, Math.round(target) + span); b++) {
+      if (mag[b] > peak) peak = mag[b];
+    }
+    total += peak * HARMONIC_WEIGHT[h - 1];
+  }
+  return total;
+}
+
+/** Quita del espectro lo que explica una nota ya aceptada. */
+export function subtractHarmonics(mag, midi, binHz) {
+  const f0 = midiToFreq(midi);
+  let fundamental = 0;
+  for (let h = 1; h <= HARMONICS; h++) {
+    const target = (f0 * h) / binHz;
+    if (target >= mag.length - 1) break;
+    const span = Math.max(1, Math.round(target * (0.029 + 0.005 * h)));
+    const from = Math.max(0, Math.round(target) - span);
+    const to = Math.min(mag.length - 1, Math.round(target) + span);
+    let peak = 0;
+    for (let b = from; b <= to; b++) if (mag[b] > peak) peak = mag[b];
+    if (h === 1) fundamental = peak;
+    const expected = Math.min(peak, (fundamental || peak) * HARMONIC_WEIGHT[h - 1] * 1.3);
+    for (let b = from; b <= to; b++) mag[b] = Math.max(0, mag[b] - expected * 0.9);
+  }
+}
+
+/**
+ * Las notas que suenan en un instante: hasta `maxNotes`, de más a menos clara.
+ *
+ * Dos trampas conocidas de este método, y lo que se hace con cada una:
+ *
+ * - **El vecino de semitono.** Al restar una nota queda ruido alrededor y el
+ *   semitono de al lado se cuela. En música real dos semitonos juntos son
+ *   raros, y el falso positivo molesta más que el raro que se pierde, así que
+ *   se bloquean.
+ * - **El subarmónico de abajo.** Una nota una octava o una docena por debajo
+ *   "explica" sus propios armónicos con lo que ya suena, y aparece de la nada.
+ *   Se le exige mucha más evidencia que a las demás.
+ */
+export function framePitches(mag, binHz, maxNotes, floor, relativeFloor = 0.3) {
+  const working = Float32Array.from(mag);
+  const found = [];
+  const blocked = new Set();
+  let firstScore = 0;
+
+  for (let round = 0; round < maxNotes; round++) {
+    let best = 0;
+    let bestScore = 0;
+    for (let midi = POLY_MIN; midi <= POLY_MAX; midi++) {
+      if (blocked.has(midi)) continue;
+      let score = salience(working, midi, binHz);
+      // Candidata por debajo de algo ya aceptado, con la octava o la docena
+      // justo encima: casi siempre es un fantasma del bajo.
+      if (found.some((f) => f.midi - midi === 12 || f.midi - midi === 19 || f.midi - midi === 24)) {
+        score *= 0.45;
+      }
+      // Y lo que aparece muy por debajo de un bajo ya aceptado tampoco suele
+      // existir: el bajo de verdad se oye primero, no el cuarto.
+      if (found.length && midi < Math.min(...found.map((f) => f.midi)) - 6) {
+        score *= 0.5;
+      }
+      if (score > bestScore) { bestScore = score; best = midi; }
+    }
+    if (!best) break;
+    if (!round) firstScore = bestScore;
+    // Las notas de un acorde pesan parecido; lo que queda muy por debajo de la
+    // más clara es residuo, no música.
+    if (bestScore < Math.max(floor, firstScore * relativeFloor)) break;
+
+    found.push({ midi: best, score: bestScore });
+    blocked.add(best);
+    blocked.add(best - 1);
+    blocked.add(best + 1);
+    subtractHarmonics(working, best, binHz);
+  }
+  return found;
+}
+

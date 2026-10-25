@@ -147,6 +147,8 @@
           <input type="range" id="detail-speed" min="25" max="200" step="5" value="100">
           <p class="hint">Desde el 25 %. Al bajar la velocidad también se ensancha el margen de acierto.</p>
         </div>
+        <details class="more">
+          <summary>Más opciones</summary>
         <div class="field" id="difficulty-field">
           <span class="label">Exigencia</span>
           <div class="segmented" id="difficulty-picker" role="radiogroup" aria-label="Exigencia">
@@ -168,6 +170,7 @@
           <input type="range" id="detail-transpose" min="-24" max="24" step="1" value="0">
           <p class="hint">Sube o baja la canción entera. La digitación se recalcula sola.</p>
         </div>
+        </details>
         <p class="hint notice" id="fit-notice" hidden></p>
         <button class="btn btn-primary btn-big" id="song-start" type="button">Tocar la canción completa</button>
       </div>
@@ -221,8 +224,29 @@
       <button class="btn btn-ghost back" id="settings-back" type="button">← Volver</button>
       <div class="screen-head"><h2>Ajustes</h2></div>
 
-      <div class="panel">
-        <h3>Sonido</h3>
+      <details class="panel fold" data-fold="input">
+        <summary><span class="fold-title">Con qué toco</span><span class="fold-state" id="state-input"></span></summary>
+        <div class="field">
+          <div class="segmented" id="set-input" role="radiogroup" aria-label="Entrada">
+            <button type="button" role="radio" aria-checked="true" data-input="touch">Pantalla</button>
+            <button type="button" role="radio" aria-checked="false" data-input="mic">Micrófono</button>
+            <button type="button" role="radio" aria-checked="false" data-input="midi">Teclado MIDI</button>
+          </div>
+          <p class="hint" id="input-status">Toca las teclas en la pantalla.</p>
+        </div>
+        <div class="field" id="mic-panel" hidden>
+          <div class="heard" id="mic-heard">
+            <b id="mic-note">—</b>
+            <span id="mic-cents">toca una nota en tu piano</span>
+          </div>
+          <div class="level"><div class="level-fill" id="mic-level-fill"></div></div>
+          <label class="label" for="set-mic-sensitivity">Sensibilidad <output id="set-mic-sensitivity-out">media</output></label>
+          <input type="range" id="set-mic-sensitivity" min="0" max="100" step="5" value="50">
+          <p class="hint">Si no te oye, súbela. Si salta sola con el ruido de la sala, bájala. Oye <b>una nota a la vez</b>, de Mi1 a Do7; para acordes todavía no da.</p>
+        </div>
+      </details>
+      <details class="panel fold" data-fold="sound">
+        <summary><span class="fold-title">Sonido</span><span class="fold-state" id="state-sound"></span></summary>
         <div class="field">
           <label class="label" for="set-volume">Volumen <output id="set-volume-out">75 %</output></label>
           <input type="range" id="set-volume" min="0" max="100" step="5" value="75">
@@ -243,10 +267,10 @@
           <input type="range" id="set-latency" min="-150" max="300" step="10" value="0">
           <p class="hint">Si con auriculares Bluetooth el sonido te llega tarde, sube esto hasta que las notas cuadren.</p>
         </div>
-      </div>
+      </details>
 
-      <div class="panel">
-        <h3>Pantalla</h3>
+      <details class="panel fold" data-fold="screen">
+        <summary><span class="fold-title">Pantalla</span><span class="fold-state" id="state-screen"></span></summary>
         <div class="field">
           <span class="label">Nombres de nota</span>
           <div class="segmented" id="set-names" role="radiogroup" aria-label="Nombres de nota">
@@ -268,10 +292,10 @@
         <div class="field row">
           <label class="switch"><input type="checkbox" id="set-shownames"> <span>Nombre de la nota dentro de la nota que cae</span></label>
         </div>
-      </div>
+      </details>
 
-      <div class="panel">
-        <h3>Notas que caen</h3>
+      <details class="panel fold" data-fold="roll">
+        <summary><span class="fold-title">Notas que caen</span><span class="fold-state" id="state-roll"></span></summary>
         <div class="field">
           <label class="label" for="set-lookahead">Cuánto se ve venir <output id="set-lookahead-out">2,6 s</output></label>
           <input type="range" id="set-lookahead" min="12" max="55" step="1" value="26">
@@ -299,10 +323,10 @@
         <div class="field row">
           <label class="switch"><input type="checkbox" id="set-glow" checked> <span>Brillo sobre la línea de ataque</span></label>
         </div>
-      </div>
+      </details>
 
-      <div class="panel">
-        <h3>Tu piano</h3>
+      <details class="panel fold" data-fold="piano">
+        <summary><span class="fold-title">Tu piano</span><span class="fold-state" id="state-piano"></span></summary>
         <div class="field">
           <span class="label">Cuántas teclas tiene</span>
           <div class="segmented" id="set-piano" role="radiogroup" aria-label="Tamaño de tu piano"></div>
@@ -325,58 +349,37 @@
           </div>
           <p class="hint">Plegarlas cambia un poco la música —un bajo sube una octava y se nota— pero te deja tocar la pieza entera en el teclado que tienes.</p>
         </div>
-      </div>
+      </details>
 
-      <div class="panel">
-        <h3>Práctica</h3>
+      <details class="panel fold" data-fold="practice">
+        <summary><span class="fold-title">Práctica</span><span class="fold-state" id="state-practice"></span></summary>
         <div class="field">
           <label class="label" for="set-goal">Objetivo diario <output id="set-goal-out">10 min</output></label>
           <input type="range" id="set-goal" min="5" max="90" step="5" value="10">
           <p class="hint">Solo para tu racha y el calendario. Nadie te va a regañar.</p>
         </div>
-      </div>
+      </details>
 
-      <div class="panel">
-        <h3>Con qué toco</h3>
-        <div class="field">
-          <div class="segmented" id="set-input" role="radiogroup" aria-label="Entrada">
-            <button type="button" role="radio" aria-checked="true" data-input="touch">Pantalla</button>
-            <button type="button" role="radio" aria-checked="false" data-input="mic">Micrófono</button>
-            <button type="button" role="radio" aria-checked="false" data-input="midi">Teclado MIDI</button>
-          </div>
-          <p class="hint" id="input-status">Toca las teclas en la pantalla.</p>
-        </div>
-        <div class="field" id="mic-panel" hidden>
-          <div class="heard" id="mic-heard">
-            <b id="mic-note">—</b>
-            <span id="mic-cents">toca una nota en tu piano</span>
-          </div>
-          <div class="level"><div class="level-fill" id="mic-level-fill"></div></div>
-          <label class="label" for="set-mic-sensitivity">Sensibilidad <output id="set-mic-sensitivity-out">media</output></label>
-          <input type="range" id="set-mic-sensitivity" min="0" max="100" step="5" value="50">
-          <p class="hint">Si no te oye, súbela. Si salta sola con el ruido de la sala, bájala. Oye <b>una nota a la vez</b>, de Mi1 a Do7; para acordes todavía no da.</p>
-        </div>
-      </div>
 
-      <div class="panel">
-        <h3>Tus datos</h3>
+      <details class="panel fold" data-fold="data">
+        <summary><span class="fold-title">Tus datos</span><span class="fold-state" id="state-data"></span></summary>
         <p class="hint">Todo está en este dispositivo. Si lo cambias o borras el navegador, exporta antes.</p>
         <div class="buttonrow">
           <button class="btn btn-ghost" id="export-library" type="button">Exportar biblioteca</button>
           <button class="btn btn-ghost" id="import-library" type="button">Importar copia</button>
           <button class="btn btn-ghost danger" id="wipe-library" type="button">Borrar todo</button>
         </div>
-      </div>
+      </details>
 
-      <div class="panel">
-        <h3>Instalar en el iPad</h3>
+      <details class="panel fold" data-fold="install">
+        <summary><span class="fold-title">Instalar en el iPad</span><span class="fold-state" id="state-install"></span></summary>
         <ol class="steps">
           <li>Abre esta página en Safari.</li>
           <li>Toca <b>Compartir</b> y luego <b>Añadir a pantalla de inicio</b>.</li>
           <li>Ábrela desde el icono: a pantalla completa y sin conexión.</li>
         </ol>
         <p class="hint" id="sw-status">—</p>
-      </div>
+      </details>
 
       <p class="fineprint">
         Cascada toca obras de dominio público y los archivos que tú importes. No incluye ningún

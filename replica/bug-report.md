@@ -25,6 +25,10 @@ Severidad: S1 rompe la app · S2 falsea lo que ves · S3 molesta · S4 cosmétic
 | 16 | S3 | Las teclas negras estaban centradas en la junta | era una rejilla, no un piano | cerrado: posiciones reales (Do# y Re# simétricos sobre el Re, Sol# en su junta) y tapas de blancas recortadas |
 | 17 | S4 | Exportar a MIDI se comía los acentos del título | el nombre se recortaba a ASCII | cerrado: va en UTF-8 |
 
+| 18 | S1 | **El micrófono no detectaba bien en un piano de verdad**, aunque las pruebas salían perfectas | las pruebas usaban tonos sintéticos. Un piano real tiene cuerdas con rigidez (los armónicos no caen en múltiplos exactos), tres cuerdas por nota y, sobre todo, **sigue sonando** cuando tocas la siguiente. Preguntar "¿qué nota suena?" a una mezcla de tres cuerdas da una nota grave que nadie tocó | cerrado: ahora detecta el **conjunto** de notas que suenan y da por nueva la que aparece; una nota nueva tiene que dominar su instante. Prueba de regresión contra un piano simulado con inarmonicidad, pedal y sala |
+| 19 | S2 | La resta de armónicos dejaba residuo que se contaba como notas nuevas | asumía múltiplos exactos del fundamental; con la rigidez de la cuerda los parciales altos se escapaban de la ventana | cerrado: la ventana crece con el número de armónico |
+| 20 | S3 | Los ajustes eran ocho paneles abiertos, imposibles de sobrevolar | — | cerrado: ocho secciones plegadas, cada una con su estado al lado |
+
 **Abiertos: ninguno de S1 ni S2.** Lo que queda son límites conocidos, no fallos:
 la transcripción de audio es monofónica, la detección por micrófono se confunde con acordes
 densos, y Safari en iPad no tiene Web MIDI.

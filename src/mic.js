@@ -3,18 +3,21 @@
 // Safari en iPad no implementa Web MIDI, así que el micrófono es el camino
 // para tocar en un piano acústico o en un teclado sin USB.
 //
-// Detecta **una nota a la vez**, y lo hace bien: mide cada cuánto se repite la
-// onda (ver pitch.js) en vez de buscar el pico más alto del espectro, que es
-// lo que hacía antes y lo que confundía un Mi4 con el Mi3 de debajo. Para
-// acordes hace falta otra cosa; aquí no se finge que los oye.
+// Oye **varias notas a la vez**, que es como suena un piano de verdad: con
+// pedal, o simplemente tocando seguido, las cuerdas anteriores siguen
+// sonando. Por eso no pregunta "¿qué nota suena?" sino "¿qué notas suenan?",
+// y da por nueva la que aparece en ese conjunto. Preguntar lo primero era lo
+// que hacía aparecer notas graves que nadie había tocado: varias cuerdas
+// juntas forman una onda con un periodo largo que no es ninguna tecla.
 
-import { detectPitch, rms, freqToMidi } from './pitch.js';
+import { detectPitch, rms, freqToMidi, spectrum, framePitches } from './pitch.js';
 
 export { freqToMidi };
 
 const FRAME = 4096;          // ~93 ms a 44,1 kHz: llega hasta el Mi1
 const HOLD_MS = 190;         // sin señal este rato, se suelta la nota
-const CONFIRM_FRAMES = 2;    // dos lecturas seguidas antes de darla por buena
+const MAX_VOICES = 3;        // cuántas notas a la vez se buscan
+const VOICE_FLOOR = 0.55;    // una nota tiene que pesar la mitad que la más clara
 const MIN_MIDI = 28;         // Mi1
 const MAX_MIDI = 96;         // Do7
 
@@ -30,8 +33,10 @@ export class MicInput {
     this.onLevel = null;
     this.onDetect = null;     // para que los ajustes enseñen lo que se oye
     this.sensitivity = 0.5;   // 0 = sordo en sala ruidosa, 1 = muy sensible
-    this.held = null;         // { midi, since }
-    this.candidate = null;    // { midi, frames }
+    this.sounding = new Set();   // lo que suena ahora mismo
+    this.seen = new Map();       // midi -> confianza acumulada
+    this.startedAt = new Map();  // midi -> cuándo empezó
+    this.stoppedAt = new Map();  // midi -> cuándo se apagó
     this.floor = 0.004;       // suelo de ruido, se aprende solo
     this.loudness = 0;        // media suave, para notar los ataques
   }
@@ -87,9 +92,8 @@ export class MicInput {
   }
 
   release() {
-    if (this.held && this.onNoteOff) this.onNoteOff(this.held.midi, 'mic');
-    this.held = null;
-    this.candidate = null;
+    for (const midi of [...this.sounding]) this.stopNote(midi);
+    this.seen.clear();
   }
 
   loop() {
@@ -98,7 +102,6 @@ export class MicInput {
     this.analyser.getFloatTimeDomainData(this.data);
 
     const level = rms(this.data);
-    // El suelo de ruido se aprende de los ratos callados.
     if (level < this.floor * 1.5 || this.floor === 0) this.floor = this.floor * 0.95 + level * 0.05;
     const now = performance.now();
     const gate = this.gate;
@@ -106,43 +109,101 @@ export class MicInput {
     if (this.onLevel) this.onLevel(Math.min(1, level / Math.max(0.02, gate * 6)));
 
     if (level < gate) {
-      this.loudness = this.loudness * 0.8;
-      if (this.held && now - this.held.seen > HOLD_MS) this.release();
-      if (this.onDetect && !this.held) this.onDetect(null);
+      this.loudness *= 0.82;
+      this.seen.clear();
+      for (const midi of [...this.sounding]) this.stopNote(midi);
+      if (this.onDetect) this.onDetect(null);
       return;
     }
 
-    const result = detectPitch(this.data, this.sampleRate, { minConfidence: 0.78 });
-    if (this.onDetect) this.onDetect(result.midi ? { ...result, level } : null);
+    // Un piano con pedal son varias cuerdas sonando a la vez, así que la
+    // pregunta correcta no es "¿qué nota suena?" sino "¿qué notas suenan?".
+    // Se mide, para cada tecla posible, cuánta señal encaja con que esa tecla
+    // esté sonando, se acepta la más clara, se borra del espectro lo que esa
+    // nota explica, y se repite. Una nota nueva es la que aparece en ese
+    // conjunto; las que siguen resonando ya estaban y no vuelven a contarse.
+    const mag = spectrum(this.data, FRAME);
+    const binHz = this.sampleRate / FRAME;
+    let sum = 0;
+    for (let i = 0; i < mag.length; i++) sum += mag[i];
+    const floor = (sum / mag.length) * 9;
+    const found = framePitches(mag, binHz, MAX_VOICES, floor, VOICE_FLOOR)
+      .filter((p) => p.midi >= MIN_MIDI && p.midi <= MAX_MIDI);
 
-    if (!result.midi || result.midi < MIN_MIDI || result.midi > MAX_MIDI) {
-      if (this.held && now - this.held.seen > HOLD_MS) this.release();
-      return;
+    if (this.onDetect) {
+      const strongest = found[0];
+      this.onDetect(strongest
+        ? { midi: strongest.midi, confidence: 1, cents: this.centsOf(strongest.midi), level }
+        : null);
     }
 
-    // Golpe nuevo sobre la misma tecla: sube el volumen de golpe.
-    const attack = level > this.loudness * 1.8 && level > gate * 1.6;
-    this.loudness = Math.max(level, this.loudness * 0.85);
-
-    if (this.held && this.held.midi === result.midi) {
-      this.held.seen = now;
-      if (attack && now - this.held.since > 120) {
-        if (this.onNoteOff) this.onNoteOff(result.midi, 'mic');
-        if (this.onNoteOn) this.onNoteOn(result.midi, 0.85, 'mic');
-        this.held.since = now;
+    // Una nota tiene que salir en dos lecturas seguidas para darla por buena, y
+    // faltar en tres seguidas para darla por acabada. Eso quita el parpadeo.
+    // Una tecla recién golpeada DOMINA el instante en que se toca. El residuo
+    // que deja la resta de armónicos nunca domina: aparece flojo, a la sombra
+    // de la nota de verdad. Así que para empezar a contar una nota se le exige
+    // pesar casi tanto como la más clara del momento; para seguir sonando, no.
+    const strongestScore = found.length ? found[0].score : 0;
+    const nowSeen = new Set(found.map((p) => p.midi));
+    const dominant = new Set(
+      found.filter((p) => p.score >= strongestScore * 0.75).map((p) => p.midi),
+    );
+    for (const midi of nowSeen) this.seen.set(midi, Math.min(4, (this.seen.get(midi) || 0) + 2));
+    for (const [midi, count] of [...this.seen]) {
+      if (!nowSeen.has(midi)) {
+        if (count <= 1) this.seen.delete(midi);
+        else this.seen.set(midi, count - 1);
       }
-      return;
     }
 
-    // Nota distinta: hay que verla dos veces seguidas antes de creérsela.
-    if (this.candidate && this.candidate.midi === result.midi) this.candidate.frames += 1;
-    else this.candidate = { midi: result.midi, frames: 1 };
+    const attack = level > this.loudness * 1.5 && level > gate * 1.4;
+    this.loudness = Math.max(level, this.loudness * 0.9);
 
-    if (this.candidate.frames >= CONFIRM_FRAMES) {
-      if (this.held && this.onNoteOff) this.onNoteOff(this.held.midi, 'mic');
-      this.held = { midi: result.midi, since: now, seen: now };
-      this.candidate = null;
-      if (this.onNoteOn) this.onNoteOn(result.midi, Math.min(1, 0.5 + level * 6), 'mic');
+    for (const [midi, count] of this.seen) {
+      if (count < 3 || this.sounding.has(midi)) continue;
+      if (!dominant.has(midi)) continue;
+      // Un semitono pegado a algo que ya suena casi siempre es residuo de la
+      // resta, no una tecla: nadie toca dos teclas contiguas a la vez.
+      if (this.sounding.has(midi - 1) || this.sounding.has(midi + 1)) continue;
+      // Y una nota que acaba de apagarse no puede "volver" sin un golpe nuevo.
+      const stopped = this.stoppedAt.get(midi) || 0;
+      if (now - stopped < 250 && !attack) continue;
+      this.startNote(midi, level, now);
+    }
+    for (const midi of [...this.sounding]) {
+      if (!this.seen.has(midi)) this.stopNote(midi);
+    }
+    // La misma tecla otra vez, sin que llegara a apagarse: hace falta un golpe.
+    if (attack && found.length) {
+      const top = found[0].midi;
+      const started = this.startedAt.get(top) || 0;
+      if (this.sounding.has(top) && now - started > 140) {
+        this.stopNote(top);
+        this.startNote(top, level, now);
+      }
     }
   }
+
+  startNote(midi, level, now) {
+    this.sounding.add(midi);
+    this.startedAt.set(midi, now);
+    if (this.onNoteOn) this.onNoteOn(midi, Math.min(1, 0.5 + level * 6), 'mic');
+  }
+
+  stopNote(midi) {
+    if (!this.sounding.has(midi)) return;
+    this.sounding.delete(midi);
+    this.seen.delete(midi);
+    this.stoppedAt.set(midi, performance.now());
+    if (this.onNoteOff) this.onNoteOff(midi, 'mic');
+  }
+
+  /** Cuánto se desvía de la afinación, para poder enseñarlo. */
+  centsOf(midi) {
+    const read = detectPitch(this.data, this.sampleRate, { minConfidence: 0.6 });
+    if (!read.freq) return 0;
+    return Math.round((freqToMidi(read.freq) - midi) * 100);
+  }
+
+
 }

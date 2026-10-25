@@ -298,6 +298,14 @@ function wireSettings() {
   $('#piano-low-down').addEventListener('click', moveLow(-1));
   $('#piano-low-up').addEventListener('click', moveLow(1));
 
+  // Cualquier cambio refresca los resúmenes de las secciones plegadas.
+  const settingsScreen = $('[data-screen="settings"]');
+  for (const type of ['input', 'change', 'click']) {
+    settingsScreen.addEventListener(type, () => {
+      requestAnimationFrame(() => ui.renderSettingsSummaries());
+    });
+  }
+
   $('#export-library').addEventListener('click', ui.doExport);
   $('#import-library').addEventListener('click', () => {
     ui.openAddSheet();

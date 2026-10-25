@@ -4,9 +4,11 @@ Build: rama `jm/epic-clarke-xzil2q` · Fecha: 2026-10-25 · Entorno: Chromium he
 servidor estático del propio proyecto, y Node para el núcleo.
 
 ```
-node tests/engine.test.mjs    59 pruebas del núcleo (DSL, MIDI, teclado, tutor, tu piano, tempo, afinación, micrófono, acordes)
+node tests/engine.test.mjs    59 pruebas del núcleo (DSL, MIDI, teclado, tutor, tu piano, tempo, afinación, acordes)
+node tests/mic.test.mjs       el micrófono contra un piano simulado realista
+node tests/deploy.test.mjs    que el despliegue pueda sellar la versión del caché
 node tests/tokens.test.mjs    los tokens de diseño no se separan entre sus tres copias
-node tests/e2e.mjs            37 recorridos en un navegador de verdad
+node tests/e2e.mjs            38 recorridos en un navegador de verdad
 ```
 
 | caso | flujo | tipo | pasos | esperado | auto | resultado |
@@ -68,7 +70,12 @@ node tests/e2e.mjs            37 recorridos en un navegador de verdad
 | ACO-3 | acordes | borde | una melodía sola por el modo acordes | sale igual de bien | unit | pasa |
 | ACO-4 | acordes | negativo | silencio | ningún acorde | unit | pasa |
 | ACO-5 | acordes | — | elegir el modo al importar | se puede, y el mp3 se transcribe en los dos | e2e | pasa |
-| MIC-1 | micrófono | manual | elegir micrófono en Ajustes y tocar un piano | las teclas se iluminan | manual | pendiente de probar con un piano real |
+| PIA-6 | micrófono | feliz | escala con el piano resonando (sin pedal) | oye las ocho notas, en orden | unit | pasa |
+| PIA-7 | micrófono | borde: pedal | escala rápida con las cuerdas sonando 4 s | las oye todas y no inventa notas graves | unit | pasa |
+| PIA-8 | micrófono | borde: sala ruidosa | escala con ruido de fondo | las oye todas | unit | pasa |
+| PIA-9 | micrófono | borde: registros | mano izquierda y agudos | las oye todas | unit | pasa |
+| UXS-1 | ajustes | feliz | abrir Ajustes | ocho secciones cerradas, cada una con su estado; se abren al tocarlas y el resumen se actualiza | e2e | pasa |
+| MIC-1 | micrófono | manual | elegir micrófono en Ajustes y tocar un piano | las teclas se iluminan | manual | **probado por el usuario: fallaba. Corregido y cubierto por PIA-6..9; pendiente de volver a probarlo en un piano real** |
 | CAP-2 | grabar | manual | poner una canción en un altavoz y grabarla entera | sale una melodía reconocible | manual | pendiente de probar con música real |
 | CAP-3 | grabar | manual | capturar el sonido de una pestaña en un portátil | graba lo que suena en esa pestaña | manual | pendiente; en el iPad no existe y el botón no sale |
 | MIDI-1 | teclado MIDI | manual | conectar un teclado USB en un navegador con Web MIDI | las notas entran | manual | pendiente de probar con un teclado real |

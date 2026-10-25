@@ -1399,6 +1399,35 @@ function renderSettings() {
   for (const b of $$('[data-input]', $('#set-input'))) b.setAttribute('aria-checked', String(b.dataset.input === s.inputMode));
   renderPianoSettings();
   renderRollSettings();
+  renderSettingsSummaries();
+}
+
+/**
+ * Lo que dice cada sección cerrada.
+ *
+ * Una lista de ocho paneles abiertos no se lee: se sobrevuela. Plegados y con
+ * su estado al lado, de un vistazo sabes cómo tienes cada cosa y solo abres lo
+ * que vas a cambiar.
+ */
+function renderSettingsSummaries() {
+  const s = state.settings;
+  const piano = userPianoRange();
+  const inputName = { touch: 'La pantalla', mic: 'Micrófono', midi: 'Teclado MIDI' }[s.inputMode] || 'La pantalla';
+  const palette = (PALETTES[s.palette] || PALETTES.clasica).name;
+  const summaries = {
+    input: inputName,
+    roll: `${s.lookAheadSeconds.toFixed(1).replace('.', ',')} s · ${s.keysVisible ? `${s.keysVisible} teclas` : 'todas las teclas'} · ${palette}`,
+    piano: piano ? `${piano.keys} teclas · ${fullName(piano.lo)}–${fullName(piano.hi)}` : 'Sin límite de teclas',
+    sound: `${Math.round(s.volume * 100)} % · ${(TIMBRE_NAMES.find((t) => t.id === s.timbre) || {}).name || 'Piano'}${s.metronome ? ' · metrónomo' : ''}`,
+    screen: `${s.noteNames === 'en' ? 'C D E' : 'Do Re Mi'}${s.showFingers ? ' · dedos' : ''}`,
+    practice: `${s.dailyGoalMinutes} min al día`,
+    data: 'Exportar, importar o borrar',
+    install: 'Cómo ponerla en la pantalla de inicio',
+  };
+  for (const [key, text] of Object.entries(summaries)) {
+    const node = $(`#state-${key}`);
+    if (node) node.textContent = text;
+  }
 }
 
 /** El panel de la zona donde caen las notas. */
@@ -1514,7 +1543,7 @@ export { startPlay, closePlayer, practiceWorstBars, handleNoteOn, handleNoteOff,
   setInputMode, openAddSheet, closeAddSheet, handleFiles, fetchMidiUrl, renderSettings, doExport,
   exportCurrentSongAsMidi, renameCurrentSong, toggleRecording, updateFreeLabels, transposeLabel, download, slug,
   analyzeLink, hideRoutes, startCapture, cancelCapture, finishCapture, setTranspose,
-  renderPianoSettings, renderRollSettings, renderFitNotice, fullName, panTo, playerGeometry, showHeardNote };
+  renderPianoSettings, renderRollSettings, renderSettingsSummaries, renderFitNotice, fullName, panTo, playerGeometry, showHeardNote };
 
 function setPlayerHands(value) {
   for (const b of $$('[data-hands]', $('#player-hands'))) b.setAttribute('aria-checked', String(b.dataset.hands === value));

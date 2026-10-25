@@ -554,3 +554,50 @@ fieldset.field legend, .label {
 .heard span { color: var(--c-text-muted); font-size: 14px; }
 .heard[data-tuned="yes"] b { color: var(--c-success); }
 .heard[data-tuned="off"] b { color: var(--c-warn); }
+
+/* ------------------------------------------- ajustes que se leen de un vistazo */
+.fold { padding: 0; overflow: hidden; }
+.fold > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  padding: var(--s4) var(--s5); cursor: pointer; min-height: 60px;
+  list-style: none; font-size: 20px; font-weight: 600;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after {
+  content: '›'; font-size: 26px; color: var(--c-text-muted);
+  transition: transform var(--motion); flex: none; line-height: 1;
+}
+.fold[open] > summary::after { transform: rotate(90deg); }
+.fold[open] > summary { border-bottom: 1px solid var(--c-border); }
+.fold > :not(summary) { padding-left: var(--s5); padding-right: var(--s5); }
+.fold > :not(summary):first-of-type { padding-top: var(--s5); }
+.fold > :not(summary):last-child { padding-bottom: var(--s5); margin-bottom: 0; }
+.fold-title { flex: 1 1 auto; }
+.fold-state {
+  flex: 0 1 auto; text-align: right; color: var(--c-text-muted);
+  font-size: 14px; font-weight: 500; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 55%;
+}
+.fold[open] .fold-state { display: none; }
+
+/* --------------------------------------------- botones grandes y sencillos */
+.btn-big { min-height: 64px; font-size: 19px; border-radius: var(--r-lg); }
+.segmented button { min-height: 46px; font-size: 15px; }
+.segmented.small button { min-height: 38px; font-size: 14px; }
+.tab { min-height: 54px; font-size: 13px; }
+.tab span { font-size: 20px; }
+.card { padding: var(--s5); gap: var(--s3); }
+.card-title { font-size: 19px; }
+.icon-btn { width: 50px; height: 50px; font-size: 20px; }
+
+/* Lo avanzado, plegado: la pantalla de una canción tiene que caber de un vistazo. */
+.more { border-top: 1px solid var(--c-border); margin-top: var(--s4); }
+.more > summary {
+  list-style: none; cursor: pointer; min-height: 56px;
+  display: flex; align-items: center; gap: var(--s2);
+  font-weight: 600; color: var(--c-text-muted);
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before { content: '＋'; font-size: 18px; }
+.more[open] > summary::before { content: '−'; }
+.more > :not(summary) { padding-top: var(--s3); }

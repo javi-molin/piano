@@ -28,6 +28,8 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
 | 2026-10-25 | Tu piano (ajustes) | hecho | 25 a 88 teclas, nota más grave ajustable por octavas, y qué hacer con lo que no cabe: omitirlo o plegarlo a la octava más cercana. El detalle de la canción dice cuántas notas se movieron. |
 | 2026-10-25 | Tono por octavas | hecho | ±24 semitonos con botones de octava y de semitono, explicado en palabras, recordado por canción. |
 | 2026-10-25 | S04 Enlaces de streaming | **parcial, a propósito** | Reconoce YouTube, Spotify y SoundCloud, lee el título por su oEmbed público y lleva a los dos caminos que sí funcionan. La conversión directa desde el enlace no se puede hacer sin servidor; está dicho en la propia pantalla. |
+| 2026-10-25 | Micrófono polifónico | hecho | Detecta el conjunto de notas que suenan, no una sola. Probado contra un piano simulado con rigidez de cuerda, pedal y sala. |
+| 2026-10-25 | Ajustes plegables | hecho | Ocho secciones cerradas, cada una con su estado al lado; lo avanzado de una canción, también plegado. |
 | 2026-10-25 | Transcripción de acordes | hecho | Estimador de varias frecuencias por saliencia armónica con resta iterativa. 28 de 32 notas en el banco de acordes, cero inventadas. Elegible junto al modo melodía. |
 | 2026-10-25 | Teclado de piano real | hecho | Posiciones y proporciones reales, blancas recortadas, deslizable, ampliable y con seguimiento automático. |
 | 2026-10-25 | Ajustes de las notas que caen | hecho | Anticipación, teclas a la vista, alto del teclado, paleta de manos (con una apta para daltonismo), rejilla de compases y brillo. |
@@ -95,6 +97,36 @@ Encima, el teclado se mueve: se puede decir cuántas teclas se quieren ver a la 
 caben todas se desliza —arrastrando la barra de arriba o arrastrando sobre las propias
 notas— y además sigue solo a la canción, con el seguimiento en pausa unos segundos cuando lo
 mueves tú.
+
+## Lo que me enseñó probar con un piano de verdad
+
+El micrófono pasaba todas mis pruebas y fallaba en el piano del usuario. El error no estaba
+en el código: estaba en la prueba. Yo generaba tonos sintéticos perfectos —armónicos en
+múltiplos exactos, una nota cada vez, silencio entre medias— y un piano no es eso.
+
+Un piano tiene **cuerdas con rigidez**: sus parciales no caen en múltiplos exactos del
+fundamental, y la desviación crece con el armónico y con lo grave de la nota. Tiene **tres
+cuerdas por tecla**, ligeramente desafinadas entre sí a propósito. Y sobre todo **sigue
+sonando**: cuando tocas la siguiente tecla, la anterior no se ha ido.
+
+Esa última es la que lo rompía todo. Preguntarle "¿qué nota suena?" a una mezcla de tres
+cuerdas resonando da una respuesta que no es ninguna de ellas: la onda combinada se repite
+con un periodo largo que no corresponde a ninguna tecla, y el detector cantaba una nota
+grave que nadie había tocado. La pregunta correcta no era "¿qué nota suena?" sino **"¿qué
+notas suenan?"**, y dar por nueva la que aparece en ese conjunto.
+
+Con eso aparecieron todas las notas tocadas (49 de 50) pero también cincuenta y pico
+inventadas, porque la resta de armónicos dejaba residuo. Dos arreglos lo bajaron a once:
+ensanchar la ventana de búsqueda con el número de armónico (la rigidez de la cuerda), y
+exigir que una nota nueva **domine su instante** —una tecla recién golpeada suena fuerte; el
+residuo nunca—.
+
+`tests/mic.test.mjs` y `tests/piano-simulado.mjs` dejan eso vigilado, con pedal, sala
+ruidosa, mano izquierda y agudos.
+
+De paso, esa misma simulación me obligó a corregir una cifra que había dado por buena: la
+transcripción de acordes, medida sobre piano realista, encuentra 22 de 24 notas pero se
+inventa unas 10. Sobre tonos perfectos no se inventaba ninguna. La primera cifra no servía.
 
 ## Oír una nota no es mirar el pico más alto
 

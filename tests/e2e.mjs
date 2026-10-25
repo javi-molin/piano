@@ -81,6 +81,23 @@ async function sealOffline(page) {
   });
 }
 
+/**
+ * Abre las secciones plegadas que haya por encima de un control.
+ *
+ * Los ajustes y lo avanzado de una canción viven dentro de <details> cerrados:
+ * así la pantalla se sobrevuela. Para tocar un control hay que abrir su
+ * sección, igual que haría una persona.
+ */
+async function reveal(page, selector) {
+  await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      if (node.tagName === 'DETAILS') node.open = true;
+    }
+  }, selector);
+}
+
 async function fresh(context, base, { onboard = true } = {}) {
   const page = await context.newPage();
   await sealOffline(page);
@@ -291,6 +308,7 @@ test('F08 el juego libre suena y graba lo que tocas', async (ctx) => {
 test('los ajustes se guardan y cambian lo que se ve', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
   await page.click('#open-settings');
+  await reveal(page, '[data-names="en"]');
   await page.click('[data-names="en"]');
   await page.click('[data-labels="all"]');
   await page.locator('#set-fingers').uncheck();
@@ -308,6 +326,7 @@ test('los ajustes se guardan y cambian lo que se ve', async (ctx) => {
 test('exportar la biblioteca descarga un archivo con todo dentro', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
   await page.click('#open-settings');
+  await reveal(page, '#export-library');
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 10000 }),
     page.click('#export-library'),
@@ -361,6 +380,7 @@ test('funciona en el ancho de un móvil sin desbordarse', async (ctx) => {
 test('decir el tamaño de tu piano encaja la canción dentro de él', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
   await page.click('#open-settings');
+  await reveal(page, '[data-piano="25"]');
   await page.click('[data-piano="25"]');
   await page.click('[data-outofrange="fold"]');
   const range = await page.evaluate(() => JSON.parse(localStorage.getItem('cascada.settings')));
@@ -389,6 +409,7 @@ test('omitir deja fuera las notas que no tienes, y se nota en el total', async (
   const before = await page.evaluate(() => window.__cascada.state.song.notes.length);
 
   await page.click('#open-settings');
+  await reveal(page, '[data-piano="25"]');
   await page.click('[data-piano="25"]');
   await page.click('[data-outofrange="skip"]');
   await page.click('[data-tab="catalog"]');
@@ -430,6 +451,7 @@ test('subir una octava mueve la canción entera y se recuerda', async (ctx) => {
   await page.click('[data-tab="catalog"]');
   await page.click('#catalog-grid .card:has-text("Estrellita")');
   const before = await page.evaluate(() => window.__cascada.state.song.notes.map((n) => n.midi));
+  await reveal(page, '#transpose-oct-up');
   await page.click('#transpose-oct-up');
   await page.waitForTimeout(150);
   const after = await page.evaluate(() => window.__cascada.state.song.notes.map((n) => n.midi));
@@ -611,6 +633,7 @@ test('el selector de archivos acepta mp3 y compañía', async (ctx) => {
 test('el teclado se puede ajustar y deslizar', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
   await page.click('#open-settings');
+  await reveal(page, '#set-keys-visible');
   await page.locator('#set-keys-visible').fill('12');
   await page.locator('#set-kb-height').fill('44');
   await page.locator('#set-lookahead').fill('40');
@@ -643,6 +666,7 @@ test('el teclado se puede ajustar y deslizar', async (ctx) => {
 test('los colores de las manos se pueden cambiar', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
   await page.click('#open-settings');
+  await reveal(page, '#set-palette');
   assert((await page.locator('#set-palette button').count()) >= 3, 'faltan paletas');
   await page.click('[data-palette="daltonismo"]');
   equal(await page.evaluate(() => JSON.parse(localStorage.getItem('cascada.settings')).palette), 'daltonismo');
@@ -652,6 +676,7 @@ test('los colores de las manos se pueden cambiar', async (ctx) => {
 test('se puede quitar la rejilla y el brillo', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
   await page.click('#open-settings');
+  await reveal(page, '#set-grid');
   await page.locator('#set-grid').uncheck();
   await page.locator('#set-glow').uncheck();
   await page.locator('#set-autofollow').uncheck();
@@ -671,6 +696,7 @@ test('se puede quitar la rejilla y el brillo', async (ctx) => {
 test('los ajustes del micrófono solo salen con el micrófono elegido', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
   await page.click('#open-settings');
+  await reveal(page, '[data-input="mic"]');
   assert(!(await page.locator('#mic-panel').isVisible()), 'el panel sale sin elegir micrófono');
   await page.click('[data-input="mic"]');
   await page.waitForTimeout(600);
@@ -678,6 +704,31 @@ test('los ajustes del micrófono solo salen con el micrófono elegido', async (c
   assert(await page.locator('#mic-heard').isVisible(), 'no sale lo que oye');
   await page.locator('#set-mic-sensitivity').fill('80');
   equal(await page.evaluate(() => JSON.parse(localStorage.getItem('cascada.settings')).micSensitivity), 80);
+  await page.close();
+});
+
+test('los ajustes se leen de un vistazo y se abren tocándolos', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('#open-settings');
+  const folds = page.locator('.fold');
+  assert((await folds.count()) >= 7, 'faltan secciones');
+
+  // Cerradas, cada una dice cómo la tienes.
+  assert(!(await page.locator('#set-volume').isVisible()), 'las secciones nacen abiertas');
+  const estado = await page.locator('#state-sound').textContent();
+  assert(/%/.test(estado), `el resumen del sonido no dice nada: ${estado}`);
+  assert(/teclas/.test(await page.locator('#state-piano').textContent()), 'el resumen del piano no dice nada');
+
+  // Y se abren tocando su título, como una persona.
+  await page.click('[data-fold="sound"] summary');
+  await page.waitForTimeout(150);
+  assert(await page.locator('#set-volume').isVisible(), 'no se abrió al tocarla');
+
+  // El resumen se actualiza al cambiar algo.
+  await page.locator('#set-volume').fill('30');
+  await page.waitForTimeout(250);
+  assert(/30 %/.test(await page.locator('#state-sound').textContent()), 'el resumen no se actualizó');
+  equal(page.problems.length, 0, `errores de consola: ${page.problems.join(' | ')}`);
   await page.close();
 });
 

@@ -61,9 +61,12 @@ compases se te escapa, y un botón te mete a practicar justo esos.
 ### Con qué puedes tocar
 
 - **La pantalla.** Multitouch, con los nombres de nota sobre las teclas.
-- **Tu piano de verdad**, por el **micrófono**. Ajustes → Con qué toco → Micrófono.
-  Va bien con notas sueltas y acordes sencillos; con auriculares, mejor (si no, el altavoz
-  se oye a sí mismo).
+- **Tu piano de verdad**, por el **micrófono**. Ajustes → Con qué toco → Micrófono, y ahí
+  mismo ves lo que oye, para comprobarlo sin fiarte. Oye **varias notas a la vez**, que es
+  como suena un piano: con pedal, o tocando seguido, las cuerdas anteriores siguen sonando.
+  Medido contra un piano simulado realista: **oye las 42 notas de seis escenarios distintos**
+  —incluido pedal y sala ruidosa— y se cuela alguna de más, unas trece en total. Con
+  auriculares va mejor: si no, el altavoz se oye a sí mismo.
 - **Un teclado MIDI**, donde el navegador tenga Web MIDI. **Safari en iPad no lo trae**:
   en el iPad, el camino es la pantalla o el micrófono.
 - **El teclado del ordenador**: fila `Z`…`M` y `Q`…`P`.
@@ -144,7 +147,7 @@ python3 -m http.server 8080     # o: npm start
 ```
 
 ```bash
-npm test          # 59 del núcleo + tokens de diseño + despliegue (solo Node)
+npm test          # 59 del núcleo + micrófono + tokens + despliegue (solo Node)
 npm run test:e2e  # 37 recorridos en Chromium (necesita playwright)
 npm run icons     # regenera los iconos desde los tokens
 ```
@@ -168,7 +171,8 @@ src/player.js          el tutor: modo espera, puntuación, bucle
 src/store.js           IndexedDB + localStorage, exportar e importar
 src/ui.js, src/app.js  pantallas y cableado
 tools/make_icons.py    genera los PNG del icono, sin librerías
-tests/                 núcleo, tokens y navegador, con un mp3 de prueba propio
+tests/                 núcleo, micrófono, tokens, despliegue y navegador
+                       (con un piano simulado y un mp3 de prueba, los dos propios)
 replica/               recon, arquitectura, diseño, marca, pruebas, paridad
 .claude/skills/        el pack replica-skill, por si quieres repetir algún paso
 ```
@@ -192,10 +196,11 @@ Dicho antes de que lo descubras tú:
   un modelo de transcripción corriendo en un servidor, y aquí no hay servidor. Lo que sí
   hace: leer el título del enlace, llevarte a buscar su MIDI —que es exacto— o grabarla
   mientras suena y sacarla de oído.
-- **La transcripción propia oye acordes, pero no es un modelo entrenado.** Sobre un banco de
-  diez acordes conocidos saca 28 de 32 notas sin inventarse ninguna. Las que falla son el
-  límite del método: una nota tapada por otra una octava o una quinta justo encima comparte
-  con ella todos sus armónicos y desaparece. Para exactitud, importa un MIDI.
+- **La transcripción propia oye acordes, pero no es un modelo entrenado.** Medida sobre
+  acordes de piano simulado con todo lo que lo hace difícil (cuerdas con rigidez, tres por
+  nota, sala): encuentra **22 de 24 notas, pero se inventa unas 10**. Sobre tonos sintéticos
+  perfectos salía impecable; esa cifra no servía para nada, porque un piano no suena así.
+  Para exactitud, importa un MIDI.
 - **No tiene catálogo de canciones conocidas.** Serían licencias. El catálogo es de dominio
   público y lo tuyo lo pones tú.
 - **No hay cuenta ni nube.** Si borras los datos del navegador sin exportar, se va.
