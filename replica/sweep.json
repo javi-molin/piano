@@ -1,0 +1,6 @@
+{
+  "_about": "Lo que no puede quedar en el código antes de publicar. El archivo vive en replica/, que la propia herramienta no escanea.",
+  "avoid": ["Anything Piano", "Songscription"],
+  "domains": ["playanything.com"],
+  "colors": []
+}

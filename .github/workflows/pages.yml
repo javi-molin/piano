@@ -1,0 +1,55 @@
+# Publica Cascada en GitHub Pages. El sitio es estático: no hay nada que compilar,
+# se sube el repositorio tal cual (menos los archivos de trabajo).
+name: Publicar en GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Pruebas del núcleo
+        run: node tests/engine.test.mjs
+      - name: Tokens de diseño alineados
+        run: node tests/tokens.test.mjs
+      - name: Instalar el navegador de pruebas
+        run: npm install --no-save playwright@1.49.1 && npx playwright install --with-deps chromium
+      - name: Pruebas de navegador
+        run: node tests/e2e.mjs
+
+  publicar:
+    needs: pruebas
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar el sitio
+        run: |
+          mkdir -p _site
+          cp index.html styles.css manifest.webmanifest sw.js _site/
+          cp -r src assets _site/
+          cp README.md _site/ 2>/dev/null || true
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

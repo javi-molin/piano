@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cascada — piano</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="description" content="Aprende piano con las notas cayendo sobre el teclado. Sin suscripción, sin límites y sin internet.">
+<meta name="theme-color" content="#0a0d14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cascada">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ====================================================== onboarding S01 -->
+  <section class="screen onboarding" data-screen="onboarding" hidden>
+    <div class="onboarding-card">
+      <h1 class="brand"><span class="brand-mark" aria-hidden="true"></span> Cascada</h1>
+      <p class="lead">Las notas caen sobre el teclado. Tocas cuando llegan abajo. No hay partitura que leer.</p>
+      <ol class="steps">
+        <li><b>Elige una canción</b> del catálogo o importa cualquier MIDI tuyo.</li>
+        <li><b>Modo aprender:</b> la canción te espera en cada nota, el tiempo que necesites.</li>
+        <li><b>Baja la velocidad</b> hasta donde te salga, y súbela cuando salga.</li>
+      </ol>
+      <fieldset class="field">
+        <legend>¿Con qué vas a tocar?</legend>
+        <div class="segmented" role="radiogroup" aria-label="Con qué vas a tocar">
+          <button type="button" role="radio" aria-checked="true" data-onboard-input="touch">La pantalla</button>
+          <button type="button" role="radio" aria-checked="false" data-onboard-input="mic">Un piano de verdad</button>
+          <button type="button" role="radio" aria-checked="false" data-onboard-input="midi">Un teclado MIDI</button>
+        </div>
+        <p class="hint" id="onboard-input-hint">Toca las teclas en la pantalla con los dedos. Funciona con varios dedos a la vez.</p>
+      </fieldset>
+      <fieldset class="field">
+        <legend>Nombres de las notas</legend>
+        <div class="segmented" role="radiogroup" aria-label="Nombres de las notas">
+          <button type="button" role="radio" aria-checked="true" data-onboard-names="es">Do Re Mi</button>
+          <button type="button" role="radio" aria-checked="false" data-onboard-names="en">C D E</button>
+        </div>
+      </fieldset>
+      <button class="btn btn-primary btn-big" id="onboard-done">Empezar</button>
+      <p class="fineprint">Todo se guarda en este dispositivo. Sin cuenta, sin suscripción y sin límite de canciones.</p>
+    </div>
+  </section>
+
+  <!-- ========================================================== cabecera -->
+  <header class="topbar" id="topbar">
+    <h1 class="brand"><span class="brand-mark" aria-hidden="true"></span> Cascada</h1>
+    <div class="topbar-right">
+      <button class="chip chip-streak" id="streak-chip" type="button" aria-label="Tu racha de días">
+        <span aria-hidden="true">●</span> <span id="streak-days">0</span>
+      </button>
+      <button class="icon-btn" id="open-settings" type="button" aria-label="Ajustes">⚙</button>
+    </div>
+  </header>
+
+  <main id="screens">
+
+    <!-- ==================================================== biblioteca S02 -->
+    <section class="screen" data-screen="library">
+      <div class="screen-head">
+        <h2>Tu biblioteca</h2>
+        <button class="btn btn-primary" id="add-song" type="button">+ Añadir canción</button>
+      </div>
+      <div class="searchrow">
+        <label class="sr-only" for="library-search">Buscar en tu biblioteca</label>
+        <input type="search" id="library-search" placeholder="Buscar por título o autor" autocomplete="off">
+        <div class="segmented small" role="radiogroup" aria-label="Filtrar">
+          <button type="button" role="radio" aria-checked="true" data-library-filter="all">Todas</button>
+          <button type="button" role="radio" aria-checked="false" data-library-filter="progress">Empezadas</button>
+          <button type="button" role="radio" aria-checked="false" data-library-filter="mastered">Dominadas</button>
+          <button type="button" role="radio" aria-checked="false" data-library-filter="mine">Importadas</button>
+        </div>
+      </div>
+      <div class="daily" id="daily-goal"></div>
+      <div class="grid" id="library-grid"></div>
+      <p class="empty" id="library-empty" hidden>
+        Aún no has tocado nada. Abre el <b>Catálogo</b> y elige una pieza, o importa un MIDI tuyo
+        con <b>+ Añadir canción</b>.
+      </p>
+    </section>
+
+    <!-- ====================================================== catálogo S03 -->
+    <section class="screen" data-screen="catalog" hidden>
+      <div class="screen-head">
+        <h2>Catálogo</h2>
+        <p class="sub">Obras de dominio público, arregladas para esta app. Tu biblioteca no tiene límite: importa el MIDI que quieras.</p>
+      </div>
+      <div class="searchrow">
+        <div class="segmented small" role="radiogroup" aria-label="Filtrar por nivel">
+          <button type="button" role="radio" aria-checked="true" data-catalog-level="0">Todos</button>
+          <button type="button" role="radio" aria-checked="false" data-catalog-level="1">Muy fácil</button>
+          <button type="button" role="radio" aria-checked="false" data-catalog-level="2">Fácil</button>
+          <button type="button" role="radio" aria-checked="false" data-catalog-level="3">Media</button>
+          <button type="button" role="radio" aria-checked="false" data-catalog-level="4">Intermedia</button>
+        </div>
+      </div>
+      <div class="grid" id="catalog-grid"></div>
+      <p class="empty" id="catalog-empty" hidden>No hay piezas de ese nivel.</p>
+    </section>
+
+    <!-- ================================================= detalle canción S05 -->
+    <section class="screen" data-screen="song" hidden>
+      <button class="btn btn-ghost back" id="song-back" type="button">← Volver</button>
+      <div class="song-head">
+        <div>
+          <h2 id="song-title">—</h2>
+          <p class="sub" id="song-meta">—</p>
+        </div>
+        <div class="song-head-actions">
+          <button class="btn btn-ghost" id="song-pin" type="button">Fijar</button>
+          <button class="btn btn-ghost" id="song-export" type="button">Exportar MIDI</button>
+          <button class="btn btn-ghost danger" id="song-delete" type="button" hidden>Borrar</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Cómo practicar</h3>
+        <div class="field">
+          <span class="label">Modo</span>
+          <div class="segmented" id="mode-picker" role="radiogroup" aria-label="Modo de práctica">
+            <button type="button" role="radio" aria-checked="true" data-mode="learn">Aprender<small>te espera</small></button>
+            <button type="button" role="radio" aria-checked="false" data-mode="play">Tocar<small>a tiempo</small></button>
+            <button type="button" role="radio" aria-checked="false" data-mode="mastery">Dominar<small>con puntaje</small></button>
+            <button type="button" role="radio" aria-checked="false" data-mode="listen">Escuchar<small>solo oír</small></button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Manos</span>
+          <div class="segmented" id="hands-picker" role="radiogroup" aria-label="Manos">
+            <button type="button" role="radio" aria-checked="false" data-hands="R">Derecha</button>
+            <button type="button" role="radio" aria-checked="false" data-hands="L">Izquierda</button>
+            <button type="button" role="radio" aria-checked="true" data-hands="both">Las dos</button>
+          </div>
+          <p class="hint">La mano que no practicas la toca la app, para que oigas la canción completa.</p>
+        </div>
+        <div class="field">
+          <label class="label" for="detail-speed">Velocidad <output id="detail-speed-out">100 %</output></label>
+          <input type="range" id="detail-speed" min="25" max="200" step="5" value="100">
+          <p class="hint">Desde el 25 %. Al bajar la velocidad también se ensancha el margen de acierto.</p>
+        </div>
+        <div class="field" id="difficulty-field">
+          <span class="label">Exigencia</span>
+          <div class="segmented" id="difficulty-picker" role="radiogroup" aria-label="Exigencia">
+            <button type="button" role="radio" aria-checked="false" data-difficulty="easy">Suave</button>
+            <button type="button" role="radio" aria-checked="true" data-difficulty="medium">Normal</button>
+            <button type="button" role="radio" aria-checked="false" data-difficulty="hard">Estricta</button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="detail-transpose">Transportar <output id="detail-transpose-out">0</output></label>
+          <input type="range" id="detail-transpose" min="-12" max="12" step="1" value="0">
+        </div>
+        <button class="btn btn-primary btn-big" id="song-start" type="button">Tocar la canción completa</button>
+      </div>
+
+      <div class="panel">
+        <h3>Secciones <small>practica un trozo en bucle</small></h3>
+        <div class="sections" id="section-list"></div>
+      </div>
+
+      <div class="panel" id="song-stats-panel">
+        <h3>Tu progreso con esta pieza</h3>
+        <div class="stats" id="song-stats"></div>
+      </div>
+    </section>
+
+    <!-- ====================================================== juego libre S09 -->
+    <section class="screen screen-free" data-screen="free" hidden>
+      <div class="screen-head">
+        <h2>Juego libre</h2>
+        <p class="sub">Toca lo que quieras. Si grabas, se guarda en tu biblioteca como una canción más.</p>
+      </div>
+      <div class="free-controls">
+        <button class="btn btn-ghost" id="free-octave-down" type="button">− Octava</button>
+        <span class="chip" id="free-octave-label">Do3 – Si5</span>
+        <button class="btn btn-ghost" id="free-octave-up" type="button">+ Octava</button>
+        <button class="btn btn-ghost" id="free-sustain" type="button" aria-pressed="false">Sostenido</button>
+        <button class="btn btn-record" id="free-record" type="button" aria-pressed="false">● Grabar</button>
+        <span class="chip" id="free-record-label" hidden>0:00</span>
+      </div>
+      <canvas id="free-canvas" aria-label="Teclado de piano. También puedes tocar con las teclas Z a M y Q a P."></canvas>
+      <p class="hint">Con teclado físico: fila <kbd>Z</kbd>…<kbd>M</kbd> para la octava baja y <kbd>Q</kbd>…<kbd>P</kbd> para la alta.</p>
+    </section>
+
+    <!-- ======================================================= progreso S10 -->
+    <section class="screen" data-screen="progress" hidden>
+      <div class="screen-head"><h2>Progreso</h2></div>
+      <div class="stats" id="progress-stats"></div>
+      <div class="panel">
+        <h3>Últimos 35 días</h3>
+        <div class="calendar" id="streak-calendar"></div>
+        <p class="hint">Cada cuadro es un día. Cuanto más lleno, más minutos practicados.</p>
+      </div>
+      <div class="panel">
+        <h3>Últimas sesiones</h3>
+        <div class="attempts" id="attempt-list"></div>
+      </div>
+    </section>
+
+    <!-- ======================================================== ajustes S11 -->
+    <section class="screen" data-screen="settings" hidden>
+      <button class="btn btn-ghost back" id="settings-back" type="button">← Volver</button>
+      <div class="screen-head"><h2>Ajustes</h2></div>
+
+      <div class="panel">
+        <h3>Sonido</h3>
+        <div class="field">
+          <label class="label" for="set-volume">Volumen <output id="set-volume-out">75 %</output></label>
+          <input type="range" id="set-volume" min="0" max="100" step="5" value="75">
+        </div>
+        <div class="field">
+          <span class="label">Timbre</span>
+          <div class="segmented" id="set-timbre" role="radiogroup" aria-label="Timbre"></div>
+        </div>
+        <div class="field row">
+          <label class="switch"><input type="checkbox" id="set-metronome"> <span>Metrónomo mientras toco</span></label>
+        </div>
+        <div class="field">
+          <label class="label" for="set-countin">Claqueta <output id="set-countin-out">1 compás</output></label>
+          <input type="range" id="set-countin" min="0" max="2" step="1" value="1">
+        </div>
+        <div class="field">
+          <label class="label" for="set-latency">Retardo de salida <output id="set-latency-out">0 ms</output></label>
+          <input type="range" id="set-latency" min="-150" max="300" step="10" value="0">
+          <p class="hint">Si con auriculares Bluetooth el sonido te llega tarde, sube esto hasta que las notas cuadren.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Pantalla</h3>
+        <div class="field">
+          <span class="label">Nombres de nota</span>
+          <div class="segmented" id="set-names" role="radiogroup" aria-label="Nombres de nota">
+            <button type="button" role="radio" aria-checked="true" data-names="es">Do Re Mi</button>
+            <button type="button" role="radio" aria-checked="false" data-names="en">C D E</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Etiquetas en las teclas</span>
+          <div class="segmented" id="set-labels" role="radiogroup" aria-label="Etiquetas en las teclas">
+            <button type="button" role="radio" aria-checked="false" data-labels="none">Ninguna</button>
+            <button type="button" role="radio" aria-checked="true" data-labels="white">Blancas</button>
+            <button type="button" role="radio" aria-checked="false" data-labels="all">Todas</button>
+          </div>
+        </div>
+        <div class="field row">
+          <label class="switch"><input type="checkbox" id="set-fingers" checked> <span>Número de dedo en cada nota</span></label>
+        </div>
+        <div class="field row">
+          <label class="switch"><input type="checkbox" id="set-shownames"> <span>Nombre de la nota dentro de la nota que cae</span></label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Práctica</h3>
+        <div class="field">
+          <label class="label" for="set-goal">Objetivo diario <output id="set-goal-out">10 min</output></label>
+          <input type="range" id="set-goal" min="5" max="90" step="5" value="10">
+          <p class="hint">Solo para tu racha y el calendario. Nadie te va a regañar.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Con qué toco</h3>
+        <div class="field">
+          <div class="segmented" id="set-input" role="radiogroup" aria-label="Entrada">
+            <button type="button" role="radio" aria-checked="true" data-input="touch">Pantalla</button>
+            <button type="button" role="radio" aria-checked="false" data-input="mic">Micrófono</button>
+            <button type="button" role="radio" aria-checked="false" data-input="midi">Teclado MIDI</button>
+          </div>
+          <p class="hint" id="input-status">Toca las teclas en la pantalla.</p>
+          <div class="level" id="mic-level" hidden><div class="level-fill" id="mic-level-fill"></div></div>
+          <button class="btn btn-ghost" id="input-test" type="button" hidden>Probar</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Tus datos</h3>
+        <p class="hint">Todo está en este dispositivo. Si lo cambias o borras el navegador, exporta antes.</p>
+        <div class="buttonrow">
+          <button class="btn btn-ghost" id="export-library" type="button">Exportar biblioteca</button>
+          <button class="btn btn-ghost" id="import-library" type="button">Importar copia</button>
+          <button class="btn btn-ghost danger" id="wipe-library" type="button">Borrar todo</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Instalar en el iPad</h3>
+        <ol class="steps">
+          <li>Abre esta página en Safari.</li>
+          <li>Toca <b>Compartir</b> y luego <b>Añadir a pantalla de inicio</b>.</li>
+          <li>Ábrela desde el icono: a pantalla completa y sin conexión.</li>
+        </ol>
+        <p class="hint" id="sw-status">—</p>
+      </div>
+
+      <p class="fineprint">
+        Cascada toca obras de dominio público y los archivos que tú importes. No incluye ningún
+        catálogo con derechos. Hecho para uso personal.
+      </p>
+    </section>
+  </main>
+
+  <!-- ============================================================= tabs -->
+  <nav class="tabbar" id="tabbar" aria-label="Secciones">
+    <button type="button" class="tab" data-tab="library" aria-current="page"><span aria-hidden="true">▤</span> Biblioteca</button>
+    <button type="button" class="tab" data-tab="catalog"><span aria-hidden="true">♪</span> Catálogo</button>
+    <button type="button" class="tab" data-tab="free"><span aria-hidden="true">⌨</span> Libre</button>
+    <button type="button" class="tab" data-tab="progress"><span aria-hidden="true">▲</span> Progreso</button>
+  </nav>
+
+  <!-- =================================================== reproductor S06 -->
+  <div class="player" id="player" hidden role="dialog" aria-modal="true" aria-label="Reproductor">
+    <div class="player-top">
+      <button class="icon-btn" id="player-close" type="button" aria-label="Salir">✕</button>
+      <div class="player-title">
+        <strong id="player-song">—</strong>
+        <span id="player-sub">—</span>
+      </div>
+      <div class="hud">
+        <div class="hud-item"><b id="hud-bar">1</b><small>compás</small></div>
+        <div class="hud-item"><b id="hud-accuracy">—</b><small>precisión</small></div>
+        <div class="hud-item"><b id="hud-combo">0</b><small>seguidas</small></div>
+      </div>
+      <button class="btn btn-primary" id="player-pause" type="button">Pausa</button>
+    </div>
+    <div class="player-stage">
+      <canvas id="player-canvas" aria-label="Notas que caen sobre el teclado"></canvas>
+      <div class="player-overlay" id="player-wait" hidden><span>Toca la nota marcada</span></div>
+      <div class="player-overlay big" id="player-countin" hidden><span id="countin-number">3</span></div>
+      <div class="player-overlay paused" id="player-paused" hidden>
+        <div>
+          <p>En pausa</p>
+          <div class="buttonrow">
+            <button class="btn btn-primary" id="resume-btn" type="button">Seguir</button>
+            <button class="btn btn-ghost" id="restart-btn" type="button">Empezar de nuevo</button>
+            <button class="btn btn-ghost" id="exit-btn" type="button">Salir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="player-bottom">
+      <label class="inline" for="player-speed">Velocidad</label>
+      <input type="range" id="player-speed" min="25" max="200" step="5" value="100">
+      <output id="player-speed-out">100 %</output>
+      <div class="segmented small" id="player-hands" role="radiogroup" aria-label="Manos">
+        <button type="button" role="radio" aria-checked="false" data-hands="R">Der</button>
+        <button type="button" role="radio" aria-checked="false" data-hands="L">Izq</button>
+        <button type="button" role="radio" aria-checked="true" data-hands="both">Dos</button>
+      </div>
+      <button class="btn btn-ghost" id="player-loop" type="button" aria-pressed="false">Bucle</button>
+      <button class="btn btn-ghost" id="player-metronome" type="button" aria-pressed="false">Metrónomo</button>
+      <span class="chip" id="player-range">Completa</span>
+    </div>
+  </div>
+
+  <!-- ===================================================== resultados S07 -->
+  <div class="sheet-backdrop" id="results" hidden role="dialog" aria-modal="true" aria-label="Resultados">
+    <div class="sheet results-sheet">
+      <div class="stars" id="result-stars" aria-hidden="true"></div>
+      <h2 id="result-headline">—</h2>
+      <div class="stats" id="result-stats"></div>
+      <div class="heatmap" id="result-heatmap"></div>
+      <p class="hint" id="result-advice"></p>
+      <div class="buttonrow">
+        <button class="btn btn-primary" id="result-again" type="button">Otra vez</button>
+        <button class="btn btn-ghost" id="result-practice" type="button">Practicar lo fallado</button>
+        <button class="btn btn-ghost" id="result-close" type="button">Terminar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================== añadir canción S04 -->
+  <div class="sheet-backdrop" id="add-sheet" hidden role="dialog" aria-modal="true" aria-label="Añadir canción">
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>Añadir canción</h2>
+        <button class="icon-btn" id="add-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Elegir un archivo MIDI o de audio">
+        <b>Arrastra un archivo o toca aquí</b>
+        <span>MIDI (.mid, .midi) — exacto. Audio (.mp3, .m4a, .wav) — transcripción beta.</span>
+      </div>
+      <input type="file" id="file-input" accept=".mid,.midi,audio/midi,audio/*,.json" hidden>
+
+      <div class="field">
+        <label class="label" for="url-input">…o pega el enlace a un archivo MIDI</label>
+        <div class="buttonrow">
+          <input type="url" id="url-input" placeholder="https://…/cancion.mid" autocomplete="off">
+          <button class="btn btn-primary" id="url-go" type="button">Traer</button>
+        </div>
+        <p class="hint">Tiene que ser un enlace directo a un .mid y el servidor debe permitir la descarga. Un enlace de YouTube o de Spotify no sirve: eso es audio con derechos, no una partitura.</p>
+      </div>
+
+      <details class="details">
+        <summary>Transcribir audio a notas (beta)</summary>
+        <p class="hint">
+          Esto escucha el archivo y escribe las notas que encuentra. Funciona con <b>una melodía
+          sola</b> —voz, silbido, flauta, violín, una línea de piano— y se pierde con acordes o
+          con toda una banda sonando. Si quieres exactitud, importa un MIDI.
+        </p>
+        <div class="field">
+          <label class="label" for="transcribe-bpm">Tempo del audio <output id="transcribe-bpm-out">100</output></label>
+          <input type="range" id="transcribe-bpm" min="40" max="200" step="2" value="100">
+        </div>
+        <div class="field">
+          <span class="label">Ajustar las notas a</span>
+          <div class="segmented small" id="transcribe-grid" role="radiogroup" aria-label="Rejilla">
+            <button type="button" role="radio" aria-checked="false" data-grid="0">Libre</button>
+            <button type="button" role="radio" aria-checked="false" data-grid="0.5">Corcheas</button>
+            <button type="button" role="radio" aria-checked="true" data-grid="0.25">Semicorcheas</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="progressbar" id="import-progress" hidden><div class="progressbar-fill" id="import-progress-fill"></div></div>
+      <p class="hint" id="import-status"></p>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <noscript><p class="empty">Cascada necesita JavaScript: todo el piano corre en tu navegador.</p></noscript>
+</div>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

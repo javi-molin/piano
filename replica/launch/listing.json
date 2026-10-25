@@ -1,0 +1,20 @@
+{
+  "avoid": [
+    "Anything Piano",
+    "Songscription",
+    "playanything"
+  ],
+  "app_store": {
+    "name": "Cascada: aprende piano",
+    "subtitle": "Las notas caen, tú las tocas",
+    "promotional_text": "Sin suscripción y sin límite de canciones. Importa cualquier MIDI y practícalo a la velocidad que quieras.",
+    "description": "Cascada es un tutor de piano que vive en tu iPad.\n\nLas notas caen sobre el teclado y tú las tocas cuando llegan abajo. No hay partitura que leer. En modo aprender la canción te espera en cada nota el tiempo que haga falta, y si te adelantas, va contigo.\n\nQué trae:\n- Velocidad desde el 25 por ciento, en vivo\n- Mano derecha, izquierda o las dos, con el acompañamiento tocado por la app\n- Número de dedo en cada nota\n- Secciones automáticas y bucle para repetir el trozo que se resiste\n- Mapa de calor que te dice en qué compases fallas, y un botón para practicar justo esos\n- 14 piezas de dominio público, de la escala de Do a Bach\n- Importa cualquier archivo MIDI: tu biblioteca no tiene límite\n- Toca en la pantalla, con un teclado MIDI o con tu piano acústico por el micrófono\n- Funciona sin internet\n\nSin cuenta, sin suscripción y sin anuncios. Todo se queda en tu dispositivo y puedes exportarlo cuando quieras.",
+    "keywords": "teclado,aprender,midi,practicar,musica,partitura,solfeo,principiante,tutorial,acordes,escalas",
+    "whats_new": "Primera versión."
+  },
+  "google_play": {
+    "title": "Cascada: aprende piano",
+    "short_description": "Las notas caen sobre el teclado y tú las tocas. Sin suscripción y sin límites.",
+    "full_description": "Cascada es un tutor de piano que vive en tu dispositivo.\n\nLas notas caen sobre el teclado y tú las tocas cuando llegan abajo. En modo aprender la canción te espera en cada nota.\n\nVelocidad desde el 25 por ciento, práctica por manos, secciones en bucle, número de dedo en cada nota e importación de cualquier archivo MIDI.\n\nSin cuenta, sin suscripción y sin anuncios. Funciona sin internet."
+  }
+}
