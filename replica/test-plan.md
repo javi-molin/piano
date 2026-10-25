@@ -51,6 +51,11 @@ node tests/e2e.mjs            24 recorridos en un navegador de verdad
 | MIDI-1 | teclado MIDI | manual | conectar un teclado USB en un navegador con Web MIDI | las notas entran | manual | pendiente de probar con un teclado real |
 | IPAD-1 | instalación | manual | Safari → Compartir → Añadir a pantalla de inicio | se abre a pantalla completa y sin conexión | manual | pendiente de probar en el iPad |
 
+Las pruebas de navegador **cortan cualquier petición que salga de la máquina**: lo externo
+se simula o se bloquea, nunca se deja al azar de la red. Se han corrido con las dos
+versiones de Playwright que hay en juego (1.49.1, la de CI, y 1.63, la local), porque sus
+patrones de interceptación no se interpretan igual.
+
 ## Lo que estas pruebas no cubren
 
 - **El sonido.** Chromium sin ventana no reproduce audio de verdad; se comprueba que se

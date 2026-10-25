@@ -65,8 +65,25 @@ function equal(actual, expected, message) {
 
 // ------------------------------------------------------------------ flujos
 
+/**
+ * Corta cualquier petición que salga de la máquina.
+ *
+ * Sin esto, un stub que no case deja la prueba hablando con internet de verdad
+ * y el resultado depende de la red y de la versión de Playwright: los patrones
+ * con comodines no se interpretan igual en todas. Con el corte, un stub mal
+ * puesto falla en voz alta en vez de pasar por suerte.
+ */
+async function sealOffline(page) {
+  await page.route(/^https?:\/\//, (route) => {
+    const { hostname } = new URL(route.request().url());
+    if (hostname === '127.0.0.1' || hostname === 'localhost') return route.continue();
+    return route.abort();
+  });
+}
+
 async function fresh(context, base, { onboard = true } = {}) {
   const page = await context.newPage();
+  await sealOffline(page);
   const problems = [];
   page.on('pageerror', (e) => problems.push(`PAGEERROR ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') problems.push(`CONSOLE ${m.text()}`); });
@@ -441,7 +458,9 @@ test('subir una octava mueve la canción entera y se recuerda', async (ctx) => {
 // --------------------------------------------- enlaces de YouTube/Spotify
 test('un enlace de YouTube lleva a los dos caminos que sí funcionan', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
-  await page.route('**oembed**', (route) => route.fulfill({
+  // Una expresión regular se interpreta igual en todas las versiones; los
+  // comodines de Playwright, no (fue justo lo que rompió esta prueba en CI).
+  await page.route(/\/oembed/, (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({ title: 'Estudio de prueba', author_name: 'Alguien' }),
@@ -465,7 +484,8 @@ test('un enlace de YouTube lleva a los dos caminos que sí funcionan', async (ct
 
 test('si el título no se puede leer, los caminos siguen estando', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
-  await page.route('**oembed**', (route) => route.abort());
+  // El corte de red ya lo tumba; esto lo deja dicho en la propia prueba.
+  await page.route(/\/oembed/, (route) => route.abort());
   await page.click('[data-tab="library"]');
   await page.click('#add-song');
   await page.fill('#url-input', 'https://open.spotify.com/track/abc123');

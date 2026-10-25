@@ -18,6 +18,8 @@ Severidad: S1 rompe la app · S2 falsea lo que ves · S3 molesta · S4 cosmétic
 | 11 | S2 | Cosas escondidas con `hidden` **se seguían viendo**: el botón de borrar en una pieza del catálogo, el cronómetro de grabación, el bloque de los enlaces | cualquier regla de `display` del autor (un `.btn` es `inline-flex`) gana al `display:none` del atributo | cerrado con `[hidden] { display: none !important }` y una prueba de navegador que recorre los cuatro casos |
 | 12 | S3 | La etiqueta del tono decía "una octava arriba · Do suena Do" | en octavas enteras la nota se llama igual, así que la coletilla sobraba | cerrado |
 
+| 13 | S3 | Una prueba de navegador pasaba en local y **fallaba en CI**: el stub del oEmbed no interceptaba y la llamada salía a internet de verdad | los patrones con comodines de Playwright no se interpretan igual en 1.49 (la de CI) que en 1.63 (la local) | cerrado: expresión regular en vez de comodines, y **todas** las pruebas cortan ya cualquier petición que salga de la máquina, así que un stub mal puesto falla en voz alta en vez de pasar por suerte |
+
 **Abiertos: ninguno de S1 ni S2.** Lo que queda son límites conocidos, no fallos:
 la transcripción de audio es monofónica, la detección por micrófono se confunde con acordes
 densos, y Safari en iPad no tiene Web MIDI.
