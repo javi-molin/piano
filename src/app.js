@@ -92,6 +92,9 @@ function wirePlayer() {
       $('#player-paused').hidden = false;
     }
   });
+  $('#wait-skip').addEventListener('click', () => {
+    if (state.player) state.player.skipStep();
+  });
   $('#resume-btn').addEventListener('click', () => {
     if (!state.player) return;
     state.player.resume();

@@ -66,19 +66,88 @@ export class Player {
     this.clickedUntil = -Infinity;
     this.stepIndex = 0;
     this.waiting = false;
+    this.waitingSince = 0;
     this.passes = 0;
     this.stats = { hits: 0, misses: 0, wrong: 0, combo: 0, maxCombo: 0, startedAt: 0, ms: 0 };
     this.buildSteps();
   }
 
-  /** Los pasos del modo espera: grupos de notas que suenan a la vez. */
+  /**
+   * Los pasos del modo espera: grupos de notas que suenan a la vez.
+   *
+   * De cada nota se apunta a qué paso pertenece. Hace falta porque al esperar
+   * puedes acertar una nota de más adelante, y entonces hay que apuntarla en
+   * SU paso, no en el que toca ahora.
+   */
   buildSteps() {
-    this.steps = groupByTime(this.judged).map((g) => ({
-      t: g.t,
-      notes: g.notes,
-      need: new Set(g.notes.map((n) => n.midi)),
-      got: new Set(),
-    }));
+    this.steps = [];
+    this.stepOf = new Map();   // índice de nota -> índice de paso
+    this.twins = new Map();    // índice de nota -> las notas idénticas a ella
+    for (const g of groupByTime(this.judged)) {
+      const byMidi = new Map();
+      for (const n of g.notes) {
+        if (!byMidi.has(n.midi)) byMidi.set(n.midi, []);
+        byMidi.get(n.midi).push(n);
+      }
+      const step = { t: g.t, notes: [] };
+      const index = this.steps.length;
+      for (const copies of byMidi.values()) {
+        // Una tecla por paso: dos pistas que doblan la misma nota —cosa muy
+        // común en los MIDI importados— no pueden pedirte tocarla dos veces.
+        const all = copies.map((n) => n.i);
+        step.notes.push(copies[0]);
+        for (const n of copies) {
+          this.stepOf.set(n.i, index);
+          this.twins.set(n.i, all);
+        }
+      }
+      this.steps.push(step);
+    }
+  }
+
+  /**
+   * Un paso está hecho cuando todas sus teclas se han acertado.
+   *
+   * Una sola contabilidad. Antes había dos —el estado de cada nota y un
+   * apunte aparte por paso— y podían discrepar: si te adelantabas y acertabas
+   * una nota del paso siguiente, quedaba dada por buena en una contabilidad y
+   * pendiente en la otra, y la canción se quedaba esperando para siempre una
+   * nota que ya no podía volver a acertarse.
+   */
+  stepDone(step) {
+    return step.notes.every((n) => this.states[n.i] === 'hit');
+  }
+
+  /** Adelanta el paso actual por encima de todo lo que ya esté acertado. */
+  advanceSteps() {
+    let last = null;
+    while (this.stepIndex < this.steps.length && this.stepDone(this.steps[this.stepIndex])) {
+      last = this.steps[this.stepIndex];
+      this.stepIndex += 1;
+    }
+    return last;
+  }
+
+  /** Dejar pasar el paso que te bloquea: cuenta como fallo, pero sigue. */
+  skipStep() {
+    const step = this.steps[this.stepIndex];
+    if (!step) return false;
+    for (const n of step.notes) {
+      for (const i of this.twins.get(n.i) || [n.i]) {
+        if (this.states[i] === 'hit') continue;
+        this.states[i] = 'miss';
+        this.stats.misses += 1;
+      }
+    }
+    this.stats.combo = 0;
+    this.stepIndex += 1;
+    this.waiting = false;
+    this.anchorBeat = step.t;
+    this.anchorTime = this.engine.now;
+    this.beat = step.t;
+    this.advanceSteps();
+    this.onState(this.snapshot());
+    return true;
   }
 
   async start() {
@@ -137,11 +206,9 @@ export class Player {
     for (const n of this.song.notes) {
       if (n.t >= target) this.states[n.i] = null;
     }
-    for (const step of this.steps) {
-      if (step.t >= target) step.got.clear();
-    }
     this.stepIndex = this.steps.findIndex((s) => s.t >= target - 1e-6);
     if (this.stepIndex < 0) this.stepIndex = this.steps.length;
+    this.advanceSteps();
   }
 
   setSpeed(speed) {
@@ -172,10 +239,12 @@ export class Player {
 
     // Modo espera: si llega un grupo que aún no has tocado, el tiempo se para.
     if (this.config.wait) {
+      this.advanceSteps();
       const step = this.steps[this.stepIndex];
-      if (step && beat >= step.t - 1e-6 && step.got.size < step.need.size) {
+      if (step && beat >= step.t - 1e-6) {
         if (!this.waiting) {
           this.waiting = true;
+          this.waitingSince = this.engine.now;
           this.anchorBeat = step.t;
           this.anchorTime = this.engine.now;
           for (const n of step.notes) if (!this.states[n.i]) this.states[n.i] = 'expect';
@@ -202,9 +271,9 @@ export class Player {
     for (const n of this.song.notes) {
       if (n.t >= this.range.start && n.t < this.range.end) this.states[n.i] = null;
     }
-    for (const step of this.steps) step.got.clear();
     this.stepIndex = 0;
     this.waiting = false;
+    this.waitingSince = 0;
     this.anchorBeat = this.range.start;
     this.anchorTime = this.engine.now;
     this.beat = this.range.start;
@@ -293,23 +362,21 @@ export class Player {
     const beat = this.currentBeat();
     const target = this.findTarget(midi, beat);
     if (target) {
-      this.states[target.i] = 'hit';
-      this.stats.hits += 1;
+      // Las notas dobladas (misma tecla, mismo instante) se dan por buenas
+      // todas: si no, la copia se quedaba sin tocar y contaba como fallo.
+      const twins = this.twins.get(target.i) || [target.i];
+      for (const i of twins) this.states[i] = 'hit';
+      this.stats.hits += twins.length;
       this.stats.combo += 1;
       this.stats.maxCombo = Math.max(this.stats.maxCombo, this.stats.combo);
-      const step = this.steps[this.stepIndex];
-      if (step && Math.abs(step.t - target.t) < 1e-6) {
-        step.got.add(midi);
-        if (step.got.size >= step.need.size) {
-          this.stepIndex += 1;
-          if (this.config.wait) {
-            // El reloj se planta donde acabas de tocar: ni te adelanta ni te frena.
-            this.waiting = false;
-            this.anchorBeat = step.t;
-            this.anchorTime = this.engine.now;
-            this.beat = step.t;
-          }
-        }
+      const done = this.advanceSteps();
+      if (done && this.config.wait) {
+        // El reloj se planta en el último paso resuelto: ni te adelanta ni te
+        // frena. Si te habías adelantado, salta contigo hasta donde llegaste.
+        this.waiting = false;
+        this.anchorBeat = done.t;
+        this.anchorTime = this.engine.now;
+        this.beat = done.t;
       }
       return 'hit';
     }
@@ -389,6 +456,10 @@ export class Player {
       bars: this.song.lengthBars,
       states: this.states,
       pressed: this.pressed,
+      expect: this.waiting && this.steps[this.stepIndex]
+        ? this.steps[this.stepIndex].notes.filter((n) => this.states[n.i] !== 'hit').map((n) => n.midi)
+        : [],
+      waitedS: this.waiting ? Math.max(0, this.engine.now - this.waitingSince) : 0,
       stats: this.stats,
       hands: this.hands,
       speed: this.speed,

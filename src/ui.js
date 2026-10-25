@@ -695,6 +695,15 @@ function updateHud(snapshot) {
     ? pct(snapshot.accuracy) : '—';
   $('#hud-combo').textContent = String(snapshot.stats.maxCombo);
   $('#player-wait').hidden = !snapshot.waiting;
+  if (snapshot.waiting) {
+    const keys = snapshot.expect || [];
+    $('#wait-note').textContent = keys.length
+      ? `Toca ${keys.map(noteName).join(' + ')}`
+      : 'Toca la nota marcada';
+    // Pasados unos segundos, ofrecer la salida. Una tecla que tu piano no
+    // tiene, o que no cabe en la pantalla, no puede dejarte encerrado.
+    $('#wait-skip').hidden = snapshot.waitedS < 4;
+  }
   const counting = snapshot.state === 'countin';
   $('#player-countin').hidden = !counting;
   if (counting) {

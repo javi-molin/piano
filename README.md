@@ -65,8 +65,10 @@ compases se te escapa, y un botón te mete a practicar justo esos.
   mismo ves lo que oye, para comprobarlo sin fiarte. Oye **varias notas a la vez**, que es
   como suena un piano: con pedal, o tocando seguido, las cuerdas anteriores siguen sonando.
   Medido contra un piano simulado realista: **oye las 42 notas de seis escenarios distintos**
-  —incluido pedal y sala ruidosa— y se cuela alguna de más, unas trece en total. Con
-  auriculares va mejor: si no, el altavoz se oye a sí mismo.
+  —incluido pedal y sala ruidosa— y se cuela alguna de más, unas once en total. Y oye
+  **lo mismo con la señal a 0,01 que a 0,3 de pico**: no hace falta acercar el iPad al
+  piano, ni acertar con la sensibilidad. Con auriculares va mejor: si no, el altavoz se
+  oye a sí mismo.
 - **Un teclado MIDI**, donde el navegador tenga Web MIDI. **Safari en iPad no lo trae**:
   en el iPad, el camino es la pantalla o el micrófono.
 - **El teclado del ordenador**: fila `Z`…`M` y `Q`…`P`.
@@ -147,7 +149,7 @@ python3 -m http.server 8080     # o: npm start
 ```
 
 ```bash
-npm test          # 59 del núcleo + micrófono + tokens + despliegue (solo Node)
+npm test          # 62 del núcleo + micrófono + tokens + despliegue (solo Node)
 npm run test:e2e  # 37 recorridos en Chromium (necesita playwright)
 npm run icons     # regenera los iconos desde los tokens
 ```
@@ -163,7 +165,7 @@ src/songs.js           el catálogo de dominio público
 src/midi.js            lector y escritor de MIDI estándar, y entrada Web MIDI
 src/audio.js           piano sintetizado (sin un solo byte de sample)
 src/pitch.js           afinación: YIN en dos pasadas y FFT, compartido
-src/mic.js             notas por micrófono, de Mi1 a Do7, una a la vez
+src/mic.js             notas por micrófono, de Mi1 a Do7, varias a la vez
 src/transcribe.js      audio a notas: melodía o acordes, tempo automático, grabación (beta)
 src/keyboard.js        geometría, dibujo y multitouch del teclado
 src/roll.js            el piano-roll que cae

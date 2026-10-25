@@ -179,6 +179,26 @@ test('F03 una nota equivocada cuenta pero no bloquea', async (ctx) => {
   await page.close();
 });
 
+test('F03 el cartel dice qué tecla espera y deja saltarla', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Estrellita")');
+  await page.click('[data-hands="R"]');
+  await page.click('#song-start');
+  await page.waitForFunction(() => window.__cascada.player && window.__cascada.player.waiting, null, { timeout: 8000 });
+  assert(/Do/.test(await page.textContent('#wait-note')), `el cartel no dice la tecla: ${await page.textContent('#wait-note')}`);
+  // La salida aparece sola tras unos segundos: una tecla que no tienes no
+  // puede dejarte encerrado en la canción.
+  assert(await page.locator('#wait-skip').isHidden(), 'el botón de saltar salió de inmediato');
+  await page.waitForSelector('#wait-skip:visible', { timeout: 9000 });
+  await page.click('#wait-skip');
+  await page.waitForTimeout(120);
+  equal(await page.evaluate(() => window.__cascada.player.stepIndex), 1, 'no avanzó al saltar');
+  equal(await page.evaluate(() => window.__cascada.player.stats.misses), 1, 'saltar debería contar como fallo');
+  equal(page.problems.length, 0, `errores de consola: ${page.problems.join(' | ')}`);
+  await page.close();
+});
+
 test('F03 pausar detiene el tiempo y seguir lo reanuda', async (ctx) => {
   const page = await fresh(ctx.context, ctx.base);
   await page.click('[data-tab="catalog"]');

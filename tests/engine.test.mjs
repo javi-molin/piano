@@ -574,6 +574,79 @@ test('modo aprender: una nota equivocada cuenta como fallo pero no bloquea', asy
   assert.equal(player.waiting, false);
 });
 
+test('modo aprender: adelantarse no deja la canción colgada', async () => {
+  // Esto es lo que dejaba canciones pegadas para siempre: acertabas la nota del
+  // paso siguiente antes de que llegase su turno, quedaba dada por buena, y
+  // cuando por fin le tocaba ya no se podía volver a acertar. El reloj no
+  // arrancaba nunca más, y ninguna tecla lo desbloqueaba.
+  const song = buildSong({ id: 'adelanto', bpm: 60, meter: [4, 4], R: 'C4:0.5 D4:0.5 E4:0.5 F4:0.5' });
+  const engine = fakeEngine();
+  let finished = false;
+  const player = new Player(engine, song, { mode: 'learn', hands: 'R', countInBars: 0 });
+  player.onFinish = () => { finished = true; };
+  await player.start();
+  player.tick();
+  assert.equal(player.noteOn(62), 'hit', 'adelantarse a la nota siguiente es un acierto');
+  assert.equal(player.noteOn(60), 'hit');
+  player.tick();
+  assert.equal(player.stepIndex, 2, 'los dos pasos resueltos deberían quedar atrás');
+  engine.t += 1;
+  player.tick();
+  assert.equal(player.waiting, true, 'y al llegar al tercero debería esperarlo');
+  assert.deepEqual(player.snapshot().expect, [64]);
+  for (const midi of [64, 65]) {
+    assert.equal(player.noteOn(midi), 'hit');
+    engine.t += 0.2;
+    player.tick();
+  }
+  engine.t += 5;
+  player.tick();
+  assert.ok(finished, 'la canción se quedó colgada');
+  assert.equal(player.stats.misses, 0);
+});
+
+test('una nota doblada en dos pistas se toca una vez, no dos', async () => {
+  // Los MIDI importados suelen traer la misma nota en dos pistas. Antes la
+  // copia se quedaba sin tocar y contaba como fallo.
+  const song = buildSong({ id: 'doble', bpm: 60, meter: [4, 4], R: 'C4 D4 E4 F4', L: 'C4 D4 E4 F4' });
+  const engine = fakeEngine();
+  let finished = false;
+  const player = new Player(engine, song, { mode: 'learn', hands: 'both', countInBars: 0 });
+  player.onFinish = () => { finished = true; };
+  await player.start();
+  player.tick();
+  for (const midi of [60, 62, 64, 65]) {
+    assert.equal(player.noteOn(midi), 'hit');
+    engine.t += 1.1;
+    player.tick();
+  }
+  engine.t += 5;
+  player.tick();
+  assert.ok(finished);
+  assert.equal(player.stats.misses, 0, 'la nota doblada contó como fallo');
+  assert.equal(player.stats.hits, player.judged.length);
+});
+
+test('siempre se puede saltar el paso que te bloquea', async () => {
+  // Una tecla que tu piano no tiene, o que no cabe en la pantalla, no puede
+  // dejarte encerrado: cuenta como fallo, pero la canción sigue.
+  const song = buildSong({ id: 'salto', bpm: 60, meter: [4, 4], R: 'C4 D4 E4 F4' });
+  const engine = fakeEngine();
+  const player = new Player(engine, song, { mode: 'learn', hands: 'R', countInBars: 0 });
+  await player.start();
+  player.tick();
+  assert.deepEqual(player.snapshot().expect, [60], 'debería decir qué tecla espera');
+  engine.t += 7;
+  player.tick();
+  assert.ok(player.snapshot().waitedS >= 7, 'debería saber cuánto lleva esperando');
+  assert.equal(player.skipStep(), true);
+  assert.equal(player.stepIndex, 1);
+  assert.equal(player.stats.misses, 1);
+  engine.t += 2;
+  player.tick();
+  assert.deepEqual(player.snapshot().expect, [62], 'tras saltar, espera la siguiente');
+});
+
 test('la mano que no practicas la toca la app', async () => {
   const engine = fakeEngine();
   const player = new Player(engine, simple, { mode: 'play', hands: 'R', countInBars: 0 });

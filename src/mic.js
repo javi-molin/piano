@@ -18,6 +18,7 @@ const FRAME = 4096;          // ~93 ms a 44,1 kHz: llega hasta el Mi1
 const HOLD_MS = 190;         // sin señal este rato, se suelta la nota
 const MAX_VOICES = 3;        // cuántas notas a la vez se buscan
 const VOICE_FLOOR = 0.55;    // una nota tiene que pesar la mitad que la más clara
+const FLOOR_WINDOW = 190;    // ~3 s: el momento más tranquilo de este rato es el ruido
 const MIN_MIDI = 28;         // Mi1
 const MAX_MIDI = 96;         // Do7
 
@@ -37,7 +38,9 @@ export class MicInput {
     this.seen = new Map();       // midi -> confianza acumulada
     this.startedAt = new Map();  // midi -> cuándo empezó
     this.stoppedAt = new Map();  // midi -> cuándo se apagó
-    this.floor = 0.004;       // suelo de ruido, se aprende solo
+    this.levels = [];         // niveles recientes: su mínimo es el ruido de la sala
+    this.peak = 0;            // y su máximo, lo más fuerte que ha sonado
+    this.floor = 0;           // suelo de ruido: se aprende del propio micrófono
     this.loudness = 0;        // media suave, para notar los ataques
   }
 
@@ -46,8 +49,27 @@ export class MicInput {
   }
 
   get gate() {
-    // Más sensibilidad = umbral más bajo sobre el suelo de ruido aprendido.
-    return Math.max(0.0025, this.floor * (5.5 - 3.5 * this.sensitivity));
+    // Relativo al ruido que haya, nunca a un número fijo.
+    //
+    // Un iPad a dos metros de un piano, con el control de ganancia apagado,
+    // entrega picos de 0,03 donde la cuenta suponía 0,3. El umbral fijo de
+    // antes (0,0025) quedaba por encima de la señal entera: el micrófono se
+    // encendía, el medidor se movía, y no oía ni una nota. El mínimo absoluto
+    // ahora solo está para que el silencio digital no cuente como música.
+    //
+    // Y es un umbral modesto a propósito: aquí solo se decide "¿suena algo?".
+    // Qué nota suena lo decide el análisis del espectro, que es relativo y no
+    // depende de lo fuerte que llegue la señal.
+    const over = Math.max(0.0002, this.floor * (3.4 - 1.8 * this.sensitivity));
+    if (!this.peak) return over;
+    // Con un techo por debajo de la propia música. Hace falta en los primeros
+    // segundos, cuando la ventana del ruido aún está midiendo música y no
+    // silencio: sin él, el umbral nacía por encima de las notas y el
+    // micrófono pasaba sordo la mitad de la canción. Y hace falta siempre en
+    // una sala ruidosa: antes quedarse corto que quedarse sordo, porque un
+    // ruido que pase el umbral lo descarta después el análisis del espectro.
+    const under = Math.max(0.0002, this.peak * (0.07 - 0.05 * this.sensitivity));
+    return Math.min(over, under);
   }
 
   async start() {
@@ -102,11 +124,27 @@ export class MicInput {
     this.analyser.getFloatTimeDomainData(this.data);
 
     const level = rms(this.data);
-    if (level < this.floor * 1.5 || this.floor === 0) this.floor = this.floor * 0.95 + level * 0.05;
+    // El ruido de la sala es el momento MÁS TRANQUILO de los últimos segundos.
+    // Ni la media ni un número fijo servían: la media persigue a la propia
+    // música y acaba tapándola, y un número fijo deja fuera cualquier
+    // micrófono que entregue poca señal. Entre dos notas siempre hay un hueco
+    // más silencioso que la música, y ese hueco es la medida honrada.
+    this.levels.push(level);
+    if (this.levels.length > FLOOR_WINDOW) this.levels.shift();
+    let quietest = Infinity;
+    let loudest = 0;
+    for (const l of this.levels) {
+      if (l < quietest) quietest = l;
+      if (l > loudest) loudest = l;
+    }
+    this.floor = quietest;
+    this.peak = loudest;
     const now = performance.now();
     const gate = this.gate;
 
-    if (this.onLevel) this.onLevel(Math.min(1, level / Math.max(0.02, gate * 6)));
+    // El medidor también va en relación con el umbral: con un umbral fijo se
+    // quedaba plano justo cuando más falta hace saber si el micro oye algo.
+    if (this.onLevel) this.onLevel(Math.min(1, level / (gate * 5)));
 
     if (level < gate) {
       this.loudness *= 0.82;
@@ -162,6 +200,9 @@ export class MicInput {
     for (const [midi, count] of this.seen) {
       if (count < 3 || this.sounding.has(midi)) continue;
       if (!dominant.has(midi)) continue;
+      // Y una nota nueva llega con fuerza. Lo que aparece en la cola floja de
+      // lo anterior es residuo, no una tecla recién pulsada.
+      if (level < this.peak * 0.15 && !attack) continue;
       // Un semitono pegado a algo que ya suena casi siempre es residuo de la
       // resta, no una tecla: nadie toca dos teclas contiguas a la vez.
       if (this.sounding.has(midi - 1) || this.sounding.has(midi + 1)) continue;

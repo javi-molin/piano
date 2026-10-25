@@ -14,11 +14,11 @@ const { MicInput } = await import('../src/mic.js');
 
 const FRAME = 4096;
 
-function play(melody, gap, ring, noise) {
+function play(melody, gap, ring, noise, peak = 0.3) {
   reseed(); // misma señal en cada ejecución: una prueba intermitente no vale nada
   const total = melody.length * gap + ring;
   const notes = melody.map((midi, i) => pianoNote(midi, ring, { startAt: i * gap }));
-  return normalise(addNoise(room(mix(notes, total)), noise), 0.3);
+  return normalise(addNoise(room(mix(notes, total)), noise), peak);
 }
 
 function listen(signal) {
@@ -92,6 +92,41 @@ try {
   passed += 1;
 } catch (error) {
   failures.push(['balance general', error]);
+}
+
+// Lo mismo, pero con el micrófono entregando poca señal.
+//
+// Esta es la prueba que faltaba cuando el micrófono no oía nada en un piano de
+// verdad. Un iPad a dos metros, con el control de ganancia apagado, entrega
+// picos de 0,03 donde aquí se suponía 0,3; el umbral de ruido era un número
+// fijo que quedaba por encima de la señal entera, así que se encendía, el
+// medidor se movía y no oía ni una nota. Lo que oiga no puede depender de lo
+// fuerte que llegue: solo de lo que se toque.
+const REFERENCIA = score(ESCALA, listen(play(ESCALA, 0.6, 2.5, 0.002, 0.3)));
+for (const peak of [0.1, 0.03, 0.01]) {
+  const heard = listen(play(ESCALA, 0.6, 2.5, 0.002, peak));
+  const { found, extra } = score(ESCALA, heard);
+  try {
+    assert.equal(found, REFERENCIA.found,
+      `con la señal a ${peak} oye ${found} y no ${REFERENCIA.found}: ${heard.join(' ')}`);
+    assert.equal(extra, REFERENCIA.extra,
+      `con la señal a ${peak} se cuelan ${extra} y no ${REFERENCIA.extra}`);
+    passed += 1;
+  } catch (error) {
+    failures.push([`señal floja (pico ${peak})`, error]);
+  }
+}
+
+// Y con solo ruido de sala, nada: ni una nota inventada.
+for (const nivel of [0.0005, 0.005, 0.05]) {
+  reseed();
+  const heard = listen(addNoise(new Float32Array(Math.floor(RATE * 6)), nivel));
+  try {
+    assert.equal(heard.length, 0, `se inventó ${heard.length} notas con solo ruido: ${heard.join(' ')}`);
+    passed += 1;
+  } catch (error) {
+    failures.push([`solo ruido (${nivel})`, error]);
+  }
 }
 
 for (const [name, error] of failures) {

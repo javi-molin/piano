@@ -396,6 +396,13 @@ fieldset.field legend, .label {
   border-radius: var(--r-pill); padding: var(--s2) var(--s5); font-weight: 600;
   align-self: flex-start; margin-top: var(--s5);
 }
+.waitbox {
+  align-self: flex-start; margin-top: var(--s5);
+  display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+}
+.player-overlay .waitbox span { align-self: auto; margin-top: 0; }
+/* El resto del cartel no intercepta los toques sobre el teclado; el botón sí. */
+#wait-skip { pointer-events: auto; }
 .player-overlay.big span {
   font-size: 96px; font-weight: 800; color: var(--c-accent);
   border: 0; background: transparent; align-self: center; margin: 0;
@@ -509,7 +516,14 @@ fieldset.field legend, .label {
   .player-top { padding: 2px var(--s3); }
   .player-top .hud-item b { font-size: 16px; }
   .player-bottom { padding: 2px var(--s3) var(--s2); }
-  .player-overlay.big span { font-size: 64px; }
+  .waitbox {
+  align-self: flex-start; margin-top: var(--s5);
+  display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+}
+.player-overlay .waitbox span { align-self: auto; margin-top: 0; }
+/* El resto del cartel no intercepta los toques sobre el teclado; el botón sí. */
+#wait-skip { pointer-events: auto; }
+.player-overlay.big span { font-size: 64px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
