@@ -25,6 +25,10 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
 | 2026-10-25 | S01 Onboarding | hecho | Tres pasos, se salta y no vuelve. |
 | 2026-10-25 | PWA | hecho | Manifest, service worker, iconos generados con `tools/make_icons.py`, offline real. |
 | 2026-10-25 | S13 Muro de pago | **fuera a propósito** | Es lo que se quitaba. |
+| 2026-10-25 | Tu piano (ajustes) | hecho | 25 a 88 teclas, nota más grave ajustable por octavas, y qué hacer con lo que no cabe: omitirlo o plegarlo a la octava más cercana. El detalle de la canción dice cuántas notas se movieron. |
+| 2026-10-25 | Tono por octavas | hecho | ±24 semitonos con botones de octava y de semitono, explicado en palabras, recordado por canción. |
+| 2026-10-25 | S04 Enlaces de streaming | **parcial, a propósito** | Reconoce YouTube, Spotify y SoundCloud, lee el título por su oEmbed público y lleva a los dos caminos que sí funcionan. La conversión directa desde el enlace no se puede hacer sin servidor; está dicho en la propia pantalla. |
+| 2026-10-25 | Escuchar y transcribir | hecho | Grabación por micrófono (o del sonido de otra pestaña donde el navegador lo permita) y transcripción con tempo detectado solo. |
 
 ## Lo que costó más de lo que parecía
 
@@ -41,6 +45,20 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
 - **Los tresillos.** Sumar 1/3 tres veces no da 1. Los tiempos se redondean a una rejilla de
   1/960 de beat al escribir la canción, y así el ida y vuelta por MIDI sale idéntico.
 
+## La segunda tanda: enlaces, tono y el tamaño de tu piano
+
+- **Encajar la canción en el teclado que tienes** resultó ser dos pasos encadenados y en
+  este orden: primero el tono que pediste, después lo que cabe. Al revés no sirve, porque
+  subir una octava puede sacar notas del piano y hay que recortarlas *después*. Al plegar,
+  dos notas pueden aterrizar en la misma tecla a la vez: se funden en una.
+- **El tempo de lo que grabas** sale por autocorrelación de la envolvente de ataques. Era
+  eso o pedirle al usuario que adivine los bpm de una canción que está escuchando.
+- **El enlace de YouTube o Spotify** es la petición que no se puede cumplir tal cual, y lo
+  honesto fue no fingir. Lo que sí se puede: leer el título con el oEmbed público del
+  servicio (sin clave, sin cuenta), ofrecer la búsqueda de un MIDI —que es lo exacto— y
+  grabar la canción mientras suena para sacarla de oído. De un enlace pegado a algo que
+  tocar hay dos toques.
+
 ## Lo que se dejó fuera, y por qué
 
 - **Vista de partitura.** Estaba en la lista de mejoras. Dibujar un pentagrama decente es
@@ -49,3 +67,8 @@ Una línea por pieza construida. Lo que quedó a medias está dicho aquí, no es
 - **Recordatorio de racha.** Una PWA en iOS no manda notificaciones sin más. La racha está,
   el aviso no.
 - **Varios idiomas.** Solo español. El original tiene diez.
+- **Convertir un enlace de streaming en tutorial sin tocar nada.** Spotify no entrega audio
+  que el navegador pueda leer (va cifrado), y YouTube ni permite la descarga desde otra
+  página ni lo autoriza en sus términos. Aunque llegara el audio, transcribir una mezcla
+  completa con calidad necesita un modelo en servidor. Se construyó el camino que sí
+  funciona en vez de un botón que falla.

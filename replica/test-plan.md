@@ -4,9 +4,9 @@ Build: rama `jm/epic-clarke-xzil2q` · Fecha: 2026-10-25 · Entorno: Chromium he
 servidor estático del propio proyecto, y Node para el núcleo.
 
 ```
-node tests/engine.test.mjs    30 pruebas del núcleo (DSL, MIDI, teclado, tutor)
+node tests/engine.test.mjs    43 pruebas del núcleo (DSL, MIDI, teclado, tutor, tu piano, tempo)
 node tests/tokens.test.mjs    los tokens de diseño no se separan entre sus tres copias
-node tests/e2e.mjs            15 recorridos en un navegador de verdad
+node tests/e2e.mjs            24 recorridos en un navegador de verdad
 ```
 
 | caso | flujo | tipo | pasos | esperado | auto | resultado |
@@ -31,9 +31,30 @@ node tests/e2e.mjs            15 recorridos en un navegador de verdad
 | A11Y-1 | accesibilidad | — | recorrer con el tabulador hasta Catálogo y pulsar Enter | se abre el catálogo sin ratón | e2e | pasa |
 | PWA-1 | sin conexión | — | cargar la app | el service worker queda registrado | e2e | pasa |
 | RWD-1 | adaptación | — | 390 px de ancho | no se desborda a lo ancho | e2e | pasa |
+| PIA-1 | tu piano | feliz | poner 25 teclas y "traerlas a la octava más cercana", abrir una pieza grande | avisa de cuántas notas se movieron y no queda ninguna fuera del teclado | e2e | pasa |
+| PIA-2 | tu piano | feliz | poner 25 teclas y "omitirlas" | la canción tiene menos notas y lo dice | e2e | pasa |
+| PIA-3 | tu piano | borde: sin límite | no poner tamaño | ningún aviso y la canción intacta | e2e | pasa |
+| PIA-4 | tu piano | borde: teclado minúsculo | plegar en un rango de 5 semitonos | no se rompe ni se pierden notas | unit | pasa |
+| PIA-5 | tu piano | borde: colisión | plegar un Do5 sobre un Do4 que ya está | las dos se funden en una | unit | pasa |
+| TON-1 | tono | feliz | + Octava, − Semitono, Original, − Octava | la canción entera se mueve, se explica en palabras y se recuerda al volver | e2e | pasa |
+| TON-2 | tono | borde: con el piano limitado | subir una octava con 25 teclas puestas | sigue sin quedar nada fuera del teclado | unit | pasa |
+| LNK-1 | enlace | feliz | pegar un enlace de YouTube | lee el título y ofrece buscar un MIDI y transcribir de oído, y explica por qué el enlace no basta | e2e | pasa |
+| LNK-2 | enlace | borde: sin título | el oEmbed falla | los dos caminos siguen ahí | e2e | pasa |
+| LNK-3 | enlace | negativo: no es una url | escribir cualquier cosa | avisa y no enseña caminos | e2e | pasa |
+| CAP-1 | grabar | feliz | "Grabar por micrófono" y cancelar | se abre la grabación, el cronómetro corre y se cierra limpio | e2e | pasa |
+| TMP-1 | tempo | feliz | pista de clics a 120 y a 80 bpm | los detecta con ±2 bpm de error | unit | pasa |
+| TMP-2 | tempo | negativo: silencio | audio plano | devuelve 0 y se usa el valor puesto a mano | unit | pasa |
+| HID-1 | interfaz | negativo | mirar lo que debería estar escondido | el botón de borrar, el cronómetro y los bloques del enlace no se ven | e2e | pasa |
 | MIC-1 | micrófono | manual | elegir micrófono en Ajustes y tocar un piano | las teclas se iluminan | manual | pendiente de probar con un piano real |
+| CAP-2 | grabar | manual | poner una canción en un altavoz y grabarla entera | sale una melodía reconocible | manual | pendiente de probar con música real |
+| CAP-3 | grabar | manual | capturar el sonido de una pestaña en un portátil | graba lo que suena en esa pestaña | manual | pendiente; en el iPad no existe y el botón no sale |
 | MIDI-1 | teclado MIDI | manual | conectar un teclado USB en un navegador con Web MIDI | las notas entran | manual | pendiente de probar con un teclado real |
 | IPAD-1 | instalación | manual | Safari → Compartir → Añadir a pantalla de inicio | se abre a pantalla completa y sin conexión | manual | pendiente de probar en el iPad |
+
+Las pruebas de navegador **cortan cualquier petición que salga de la máquina**: lo externo
+se simula o se bloquea, nunca se deja al azar de la red. Se han corrido con las dos
+versiones de Playwright que hay en juego (1.49.1, la de CI, y 1.63, la local), porque sus
+patrones de interceptación no se interpretan igual.
 
 ## Lo que estas pruebas no cubren
 

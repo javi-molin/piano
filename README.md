@@ -71,13 +71,54 @@ compases se te escapa, y un botón te mete a practicar justo esos.
 
 - **Importa cualquier `.mid`**: arrastrándolo, eligiéndolo o pegando el enlace directo.
   Esto es lo que hace que la biblioteca no tenga límite, y es exacto.
-- **Transcribir audio** (`.mp3`, `.m4a`, `.wav`) está, **en beta**: escucha el archivo y
-  escribe las notas. Funciona con **una melodía sola** —voz, silbido, flauta, una línea de
-  piano— y se pierde con acordes o con una banda entera. Un enlace de YouTube o Spotify no
-  sirve: eso es audio con derechos, no una partitura.
+- **Pega un enlace de YouTube, Spotify o SoundCloud** y Cascada lee el título y te lleva a
+  los dos caminos que sí funcionan (ver abajo).
+- **Transcribir audio** (`.mp3`, `.m4a`, `.wav`) está, **en beta**: escucha y escribe las
+  notas, detectando el tempo solo. Funciona con **una melodía sola** —voz, silbido, flauta,
+  una línea de piano— y se pierde con acordes o con una banda entera.
 - **Graba** lo que improvises en Juego libre y se guarda como una canción más.
 - **Exporta** toda tu biblioteca a un `.json` desde Ajustes. Como no hay nube, esa es la
   forma de llevártela a otro dispositivo o de no perderla si borras los datos de Safari.
+
+### Una canción de YouTube o Spotify
+
+Pégale el enlace en **+ Añadir canción**. Cascada lee el título (con el oEmbed público del
+servicio: sin clave y sin cuenta) y te deja en dos caminos:
+
+1. **Buscar un MIDI de esa canción.** Es lo exacto: las notas de verdad, con las dos manos.
+   Un toque y estás buscándolo con el título ya puesto.
+2. **Ponla y que Cascada la escuche.** Le das a grabar, suena la canción —en un altavoz al
+   lado, o compartiendo el sonido de otra pestaña si estás en un portátil— y saca la melodía
+   de oído, con el tempo detectado solo.
+
+**Lo que no hace, y por qué:** convertir el enlace solo, de un toque. Spotify no entrega
+audio que el navegador pueda leer, y YouTube ni permite descargarlo desde otra página ni lo
+autoriza. Y aunque llegara el audio, transcribir una mezcla completa con calidad necesita un
+modelo corriendo en un servidor. Aquí no hay servidor: ese es justo el precio de que la app
+sea tuya, gratis, sin cuenta y sin conexión. Así que en vez de un botón que falla, están los
+dos caminos que llevan a lo mismo en dos toques.
+
+### Tu piano, el que tienes de verdad
+
+En **Ajustes → Tu piano** dices de cuántas teclas es: 25, 37, 49, 61, 76, 88 o sin límite.
+Si tu teclado no empieza en un Do, mueve la nota más grave por octavas.
+
+Con eso puesto, lo que no entra en tu teclado se arregla como tú digas:
+
+- **Traerlas a la octava más cercana** (por defecto). Cambia un poco la música —un bajo sube
+  una octava y se nota— pero puedes tocar la pieza entera en lo que tienes.
+- **Omitirlas.** Se quitan y punto.
+- **Mostrarlas igual.** Las ves aunque no las alcances.
+
+El detalle de cada canción te dice en una línea cuántas notas se movieron y cuántas se
+quitaron, para que no haya sorpresas.
+
+### Subir o bajar la canción entera
+
+En el detalle de la canción: **− Octava / − Semitono / Original / + Semitono / + Octava**, o
+el deslizador para cualquier punto entre −24 y +24 semitonos. La digitación se recalcula
+sola y el tono se recuerda para esa canción. Si al subir se te sale del teclado, el ajuste de
+tu piano lo recoge después.
 
 ### El catálogo
 
@@ -99,8 +140,8 @@ python3 -m http.server 8080     # o: npm start
 ```
 
 ```bash
-npm test          # 30 pruebas del núcleo + los tokens de diseño (solo Node)
-npm run test:e2e  # 15 recorridos en Chromium (necesita playwright)
+npm test          # 43 pruebas del núcleo + los tokens de diseño (solo Node)
+npm run test:e2e  # 24 recorridos en Chromium (necesita playwright)
 npm run icons     # regenera los iconos desde los tokens
 ```
 
@@ -110,12 +151,12 @@ npm run icons     # regenera los iconos desde los tokens
 index.html             una sola página, pantallas conmutadas
 styles.css             tokens de diseño como custom properties
 sw.js                  service worker: todo del caché primero
-src/score.js           modelo musical: DSL propio, digitación, secciones
+src/score.js           modelo musical: DSL propio, digitación, secciones, tu teclado
 src/songs.js           el catálogo de dominio público
 src/midi.js            lector y escritor de MIDI estándar, y entrada Web MIDI
 src/audio.js           piano sintetizado (sin un solo byte de sample)
 src/mic.js             notas por micrófono: picos del espectro sin armónicos
-src/transcribe.js      audio a notas con YIN (beta)
+src/transcribe.js      audio a notas con YIN, tempo automático y grabación (beta)
 src/keyboard.js        geometría, dibujo y multitouch del teclado
 src/roll.js            el piano-roll que cae
 src/player.js          el tutor: modo espera, puntuación, bucle
@@ -142,9 +183,10 @@ Decisiones que explican casi todo lo demás:
 
 Dicho antes de que lo descubras tú:
 
-- **No convierte una canción de Spotify o YouTube en un tutorial.** Eso necesita un modelo
-  de transcripción corriendo en un servidor, y aquí no hay servidor. El import de MIDI
-  cubre lo mismo y es exacto; la transcripción de audio propia es monofónica y está marcada
+- **No convierte una canción de Spotify o YouTube en un tutorial de un toque.** Eso necesita
+  un modelo de transcripción corriendo en un servidor, y aquí no hay servidor. Lo que sí
+  hace: leer el título del enlace, llevarte a buscar su MIDI —que es exacto— o grabarla
+  mientras suena y sacarla de oído. La transcripción propia es monofónica y está marcada
   como beta en la propia pantalla.
 - **No tiene catálogo de canciones conocidas.** Serían licencias. El catálogo es de dominio
   público y lo tuyo lo pones tú.

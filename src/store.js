@@ -28,6 +28,9 @@ export const DEFAULT_SETTINGS = {
   difficulty: 'medium',
   dailyGoalMinutes: 10,
   theme: 'dark',
+  pianoKeys: 0,        // 0 = sin límite; si no, 25/37/49/61/76/88
+  pianoLowShift: 0,    // octavas que se mueve la nota más grave del teclado
+  outOfRange: 'fold',  // show | skip | fold, para lo que no entra en tu piano
 };
 
 let dbPromise = null;
