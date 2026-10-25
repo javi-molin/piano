@@ -12,10 +12,11 @@ export function drawRoll(ctx, view) {
     layout, song, beat, pxPerBeat, rollTop, hitLine,
     hands = 'both', states, loop, theme = {}, waiting = false,
     showFingers = true, showNames = false, lang = 'es', nameFor,
+    offset = 0, showGrid = true, showGlow = true,
   } = view;
 
   const bpb = beatsPerBar(song.meter);
-  const width = layout.width;
+  const width = view.viewWidth || layout.contentWidth;
   const lookAhead = (hitLine - rollTop) / pxPerBeat;
   const from = beat - 1.5;
   const to = beat + lookAhead + 1;
@@ -28,11 +29,15 @@ export function drawRoll(ctx, view) {
   // Fondo y carriles de las teclas negras: orienta la vista sin pesar nada.
   ctx.fillStyle = theme.rollBg || '#0a0d14';
   ctx.fillRect(0, rollTop, width, hitLine - rollTop + 2);
+  ctx.save();
+  ctx.translate(-offset, 0);
   ctx.fillStyle = 'rgba(255,255,255,0.025)';
   for (const key of layout.keys) {
     if (!key.black) continue;
+    if (key.x + key.w < offset || key.x > offset + width) continue;
     ctx.fillRect(key.x, rollTop, key.w, hitLine - rollTop);
   }
+  ctx.restore();
 
   // Zona de bucle.
   if (loop && loop.active) {
@@ -43,7 +48,7 @@ export function drawRoll(ctx, view) {
   }
 
   // Rejilla.
-  const firstBeat = Math.ceil(from);
+  const firstBeat = showGrid ? Math.ceil(from) : Infinity;
   ctx.lineWidth = 1;
   ctx.font = '600 11px -apple-system, system-ui, sans-serif';
   ctx.textBaseline = 'bottom';
@@ -79,11 +84,14 @@ export function drawRoll(ctx, view) {
   const left = theme.left || '#ffb24a';
   const pulse = waiting ? 0.78 + 0.22 * Math.sin(Date.now() / 140) : 1;
 
+  ctx.save();
+  ctx.translate(-offset, 0);
   for (const n of song.notes) {
     if (n.t > to) break;
     if (n.t + n.d < from) continue;
     const key = layout.key(n.midi);
     if (!key) continue;
+    if (key.x + key.w < offset - 2 || key.x > offset + width + 2) continue;
     const played = hands === 'both' || hands === n.hand;
     const st = states ? states[n.i] : null;
     const bottom = hitLine - (n.t - beat) * pxPerBeat;
@@ -133,15 +141,18 @@ export function drawRoll(ctx, view) {
     }
   }
   ctx.globalAlpha = 1;
-  ctx.restore();
+  ctx.restore();  // desplazamiento
+  ctx.restore();  // recorte del carril
 
   // Línea de ataque.
   ctx.save();
-  const glow = ctx.createLinearGradient(0, hitLine - 26, 0, hitLine);
-  glow.addColorStop(0, 'rgba(167,139,250,0)');
-  glow.addColorStop(1, 'rgba(167,139,250,0.22)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, hitLine - 26, width, 26);
+  if (showGlow) {
+    const glow = ctx.createLinearGradient(0, hitLine - 26, 0, hitLine);
+    glow.addColorStop(0, 'rgba(167,139,250,0)');
+    glow.addColorStop(1, 'rgba(167,139,250,0.22)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, hitLine - 26, width, 26);
+  }
   ctx.strokeStyle = waiting ? (theme.warn || '#ffd166') : (theme.accent || '#a78bfa');
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -181,6 +192,18 @@ export function keyboardMarks(view) {
 }
 
 /** Mapa de calor por compás: dónde se falla. Alimenta la pantalla de resultados. */
+/** Qué notas vienen en el próximo tramo: con eso el teclado sabe a dónde ir. */
+export function upcomingMidis(song, beat, beats = 4, hands = 'both') {
+  const out = [];
+  for (const n of song.notes) {
+    if (n.t > beat + beats) break;
+    if (n.t + n.d < beat - 0.25) continue;
+    if (hands !== 'both' && hands !== 'none' && n.hand !== hands) continue;
+    out.push(n.midi);
+  }
+  return out;
+}
+
 export function barHeatmap(song, states) {
   const bpb = beatsPerBar(song.meter);
   const bars = [];

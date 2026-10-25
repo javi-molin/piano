@@ -590,6 +590,135 @@ test('el selector de archivos acepta mp3 y compañía', async (ctx) => {
   await page.close();
 });
 
+// -------------------------------------------- el teclado y lo que se ve
+test('el teclado se puede ajustar y deslizar', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('#open-settings');
+  await page.locator('#set-keys-visible').fill('12');
+  await page.locator('#set-kb-height').fill('44');
+  await page.locator('#set-lookahead').fill('40');
+  const settings = await page.evaluate(() => JSON.parse(localStorage.getItem('cascada.settings')));
+  equal(settings.keysVisible, 12, 'teclas a la vista');
+  equal(settings.keyboardHeight, 44, 'alto del teclado');
+  equal(settings.lookAheadSeconds, 4, 'anticipación');
+
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Para Elisa")');
+  await page.click('#song-start');
+  await page.waitForTimeout(900);
+
+  // Con doce teclas a la vista, una pieza que abarca más tiene que poder deslizarse.
+  const geo = await page.evaluate(() => {
+    const g = window.__cascada.geometry();
+    return { content: g.layout.contentWidth, view: g.viewWidth, hasPan: !!g.pan, offset: g.offset };
+  });
+  assert(geo.content > geo.view, 'el teclado debería ser más ancho que la pantalla');
+  assert(geo.hasPan, 'no apareció la barra para deslizar');
+
+  await page.evaluate(() => window.__cascada.pan(400));
+  await page.waitForTimeout(120);
+  const moved = await page.evaluate(() => window.__cascada.geometry().offset);
+  assert(moved > 10, `el teclado no se movió: ${moved}`);
+  equal(page.problems.length, 0, `errores de consola: ${page.problems.join(' | ')}`);
+  await page.close();
+});
+
+test('los colores de las manos se pueden cambiar', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('#open-settings');
+  assert((await page.locator('#set-palette button').count()) >= 3, 'faltan paletas');
+  await page.click('[data-palette="daltonismo"]');
+  equal(await page.evaluate(() => JSON.parse(localStorage.getItem('cascada.settings')).palette), 'daltonismo');
+  await page.close();
+});
+
+test('se puede quitar la rejilla y el brillo', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('#open-settings');
+  await page.locator('#set-grid').uncheck();
+  await page.locator('#set-glow').uncheck();
+  await page.locator('#set-autofollow').uncheck();
+  const settings = await page.evaluate(() => JSON.parse(localStorage.getItem('cascada.settings')));
+  equal(settings.showGrid, false);
+  equal(settings.showGlow, false);
+  equal(settings.autoFollow, false);
+  // Y la canción sigue dibujándose sin ellos.
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Estrellita")');
+  await page.click('#song-start');
+  await page.waitForTimeout(700);
+  equal(page.problems.length, 0, `errores de consola: ${page.problems.join(' | ')}`);
+  await page.close();
+});
+
+test('los ajustes del micrófono solo salen con el micrófono elegido', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('#open-settings');
+  assert(!(await page.locator('#mic-panel').isVisible()), 'el panel sale sin elegir micrófono');
+  await page.click('[data-input="mic"]');
+  await page.waitForTimeout(600);
+  assert(await page.locator('#mic-panel').isVisible(), 'no sale el panel del micrófono');
+  assert(await page.locator('#mic-heard').isVisible(), 'no sale lo que oye');
+  await page.locator('#set-mic-sensitivity').fill('80');
+  equal(await page.evaluate(() => JSON.parse(localStorage.getItem('cascada.settings')).micSensitivity), 80);
+  await page.close();
+});
+
+// --------------------------------------------- títulos de los archivos
+test('un título que no es UTF-8 se lee bien, no en rombos', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  // Bytes japoneses de verdad, en la codificación con la que se guardan miles
+  // de MIDI. Leerlos como UTF-8 "a lo que salga" daba un churro de rombos.
+  await page.setInputFiles('#file-input', ctx.shiftJisPath);
+  await page.waitForSelector('[data-screen="song"]:not([hidden])', { timeout: 30000 });
+  const title = await page.locator('#song-title').textContent();
+  assert(!/\ufffd/.test(title), `el título trae rombos: ${title}`);
+  equal(title, '日本語', `no se decodificó bien: ${title}`);
+  // Y si el idioma no te sirve, se renombra.
+  assert(await page.locator('#song-rename').isVisible(), 'no deja renombrarla');
+  await page.close();
+});
+
+test('un título que no se puede leer de ninguna forma cede al nombre del archivo', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.setInputFiles('#file-input', ctx.badTitlePath);
+  await page.waitForSelector('[data-screen="song"]:not([hidden])', { timeout: 30000 });
+  const title = await page.locator('#song-title').textContent();
+  assert(!/\ufffd/.test(title), `el título trae rombos: ${title}`);
+  assert(/nombre-ilegible/.test(title), `esperaba el nombre del archivo, salió: ${title}`);
+  await page.close();
+});
+
+test('una canción importada se puede renombrar', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="library"]');
+  await page.click('#add-song');
+  await page.setInputFiles('#file-input', ctx.midiPath);
+  await page.waitForSelector('[data-screen="song"]:not([hidden])', { timeout: 30000 });
+  assert(await page.locator('#song-rename').isVisible(), 'no se puede renombrar lo importado');
+  page.once('dialog', (dialog) => dialog.accept('Mi versión'));
+  await page.click('#song-rename');
+  await page.waitForTimeout(600);
+  equal(await page.locator('#song-title').textContent(), 'Mi versión');
+  await page.reload();
+  await page.waitForFunction(() => document.documentElement.dataset.ready === '1');
+  assert(/Mi versión/.test(await page.locator('#library-grid').textContent()), 'el nombre no sobrevivió');
+  await page.close();
+});
+
+test('las piezas del catálogo no se renombran ni se borran', async (ctx) => {
+  const page = await fresh(ctx.context, ctx.base);
+  await page.click('[data-tab="catalog"]');
+  await page.click('#catalog-grid .card:has-text("Estrellita")');
+  assert(!(await page.locator('#song-rename').isVisible()), 'deja renombrar una pieza del catálogo');
+  assert(!(await page.locator('#song-delete').isVisible()), 'deja borrar una pieza del catálogo');
+  await page.close();
+});
+
 // --------------------------------------------------------------------- run
 const { server, port } = await serve();
 const base = `http://127.0.0.1:${port}`;
@@ -617,6 +746,32 @@ fs.writeFileSync(midiPath, songToMidiBytes(buildSong({
 })));
 const junkPath = path.join(tmp, 'esto-no-es-musica.mid');
 fs.writeFileSync(junkPath, Buffer.from('hola, no soy un midi ni de lejos'));
+
+// Un MIDI cuyo nombre interno está en una codificación que no es UTF-8:
+// así se comprueba que no acaba en rombos.
+const shiftJisPath = path.join(tmp, 'cancion-japonesa.mid');
+fs.writeFileSync(shiftJisPath, withRawTrackName(Buffer.from([0x93, 0xfa, 0x96, 0x7b, 0x8c, 0xea])));
+
+// Bytes que no son válidos en ninguna de las tres codificaciones que se prueban.
+const badTitlePath = path.join(tmp, 'nombre-ilegible.mid');
+fs.writeFileSync(badTitlePath, withRawTrackName(Buffer.from([0x81, 0xff, 0x90, 0x8d, 0xff, 0x81])));
+
+function withRawTrackName(nameBytes) {
+  const base = songToMidiBytes(buildSong({ title: 'X', bpm: 90, meter: [4, 4], R: 'C4 D4 E4 F4' }));
+  const file = Buffer.from(base);
+  // Se reemplazan los bytes del nombre por los crudos, dejando el resto igual.
+  const marker = Buffer.from([0xff, 0x03]);
+  const at = file.indexOf(marker);
+  const oldLength = file[at + 2];
+  const head = file.subarray(0, at);
+  const tail = file.subarray(at + 3 + oldLength);
+  const body = Buffer.concat([head, marker, Buffer.from([nameBytes.length]), nameBytes, tail]);
+  // Se recalcula la longitud de la pista (los cuatro bytes tras 'MTrk').
+  const trackAt = body.indexOf(Buffer.from('MTrk'));
+  const newLength = body.length - (trackAt + 8);
+  body.writeUInt32BE(newLength, trackAt + 4);
+  return body;
+}
 
 // Un mp3 de verdad, sintetizado aquí (tests/fixtures/melodia.mp3).
 const mp3Path = path.join(ROOT, 'tests', 'fixtures', 'melodia.mp3');
@@ -664,7 +819,7 @@ const failures = [];
 for (const [name, fn] of tests) {
   const context = await browser.newContext({ permissions: ['microphone'] });
   try {
-    await fn({ context, base, midiPath, junkPath, mp3Path, longWavPath });
+    await fn({ context, base, midiPath, junkPath, mp3Path, longWavPath, badTitlePath, shiftJisPath });
     passed++;
     process.stdout.write(`\x1b[32m·\x1b[0m`);
   } catch (error) {

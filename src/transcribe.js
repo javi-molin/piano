@@ -6,6 +6,8 @@
 // canción pop completa, donde hay muchas notas a la vez. Para eso está el
 // import de MIDI, que es exacto.
 
+import { yin, freqToMidi } from './pitch.js';
+
 const TARGET_RATE = 16000;
 const FRAME = 1024;
 const HOP = 256;
@@ -47,67 +49,9 @@ function resample(samples, fromRate, toRate) {
   return out;
 }
 
-/**
- * YIN: diferencia acumulada normalizada. Devuelve [frecuencia, confianza].
- *
- * Lo importante es coger el PRIMER mínimo que baja del umbral, no el más
- * profundo: el más profundo suele caer en un múltiplo del periodo y entonces
- * un Mi4 se detecta como Mi3 o peor.
- */
-function yin(frame, rate) {
-  const tauMin = Math.max(2, Math.floor(rate / F0_MAX));
-  const tauMax = Math.min(Math.floor(frame.length / 2), Math.floor(rate / F0_MIN));
-  if (tauMax <= tauMin + 2) return [0, 0];
-
-  const diff = new Float32Array(tauMax + 2);
-  for (let tau = tauMin; tau <= tauMax; tau++) {
-    let sum = 0;
-    const last = frame.length - tau;
-    for (let i = 0; i < last; i++) {
-      const d = frame[i] - frame[i + tau];
-      sum += d * d;
-    }
-    diff[tau] = sum / last;
-  }
-
-  const cmnd = new Float32Array(tauMax + 2).fill(1);
-  let running = 0;
-  for (let tau = tauMin; tau <= tauMax; tau++) {
-    running += diff[tau];
-    cmnd[tau] = (diff[tau] * (tau - tauMin + 1)) / (running || 1);
-  }
-
-  let best = -1;
-  for (let tau = tauMin + 1; tau < tauMax; tau++) {
-    if (cmnd[tau] < YIN_THRESHOLD && cmnd[tau] <= cmnd[tau - 1] && cmnd[tau] <= cmnd[tau + 1]) {
-      best = tau;
-      break;
-    }
-  }
-  if (best < 0) {
-    let bestValue = Infinity;
-    for (let tau = tauMin; tau <= tauMax; tau++) {
-      if (cmnd[tau] < bestValue) { bestValue = cmnd[tau]; best = tau; }
-    }
-  }
-  if (best < 0) return [0, 0];
-
-  const a = best - 1 >= tauMin ? cmnd[best - 1] : cmnd[best];
-  const b = cmnd[best];
-  const c = best + 1 <= tauMax ? cmnd[best + 1] : cmnd[best];
-  const denominator = a - 2 * b + c;
-  const shift = denominator ? (0.5 * (a - c)) / denominator : 0;
-  const tau = best + (isFinite(shift) ? Math.max(-1, Math.min(1, shift)) : 0);
-  return [rate / tau, Math.max(0, Math.min(1, 1 - b))];
-}
-
 function median(values) {
   const sorted = [...values].sort((x, y) => x - y);
   return sorted[Math.floor(sorted.length / 2)];
-}
-
-function freqToMidi(freq) {
-  return 69 + 12 * Math.log2(freq / 440);
 }
 
 /**
@@ -146,7 +90,7 @@ export async function transcribeSamples(mono, rate, duration, options = {}) {
     energies[f] = rms;
     if (rms > peakEnergy) peakEnergy = rms;
     if (rms > 0.004) {
-      const [freq, confidence] = yin(frame, rate);
+      const [freq, confidence] = yin(frame, rate, { f0min: F0_MIN, f0max: F0_MAX, threshold: YIN_THRESHOLD });
       pitches[f] = confidence > 0.55 && freq > F0_MIN && freq < F0_MAX ? freqToMidi(freq) : 0;
     }
     if (f % yieldEvery === 0) {

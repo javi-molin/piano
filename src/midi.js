@@ -35,14 +35,51 @@ class Reader {
   get done() { return this.p >= this.b.length; }
 }
 
+/**
+ * Los nombres dentro de un MIDI no declaran su codificación.
+ *
+ * Decodificar siempre como UTF-8 "a lo que salga" convierte cualquier archivo
+ * hecho en Japón o en Windows en un churro de rombos. Se prueban en orden las
+ * codificaciones reales del formato y se descarta el resultado si sale basura,
+ * para quedarnos entonces con el nombre del archivo.
+ */
 function decodeText(bytes) {
-  try {
-    return new TextDecoder('utf-8', { fatal: false }).decode(bytes).replace(/\0/g, '').trim();
-  } catch (e) {
-    let s = '';
-    for (const b of bytes) s += String.fromCharCode(b);
-    return s.trim();
-  }
+  if (!bytes || !bytes.length) return '';
+  const attempt = (label, fatal) => {
+    try {
+      return new TextDecoder(label, { fatal }).decode(bytes);
+    } catch (e) {
+      return null;
+    }
+  };
+  let text = attempt('utf-8', true);
+  if (text == null) text = attempt('shift_jis', true);   // muchos MIDI vienen de Japón
+  if (text == null) text = attempt('windows-1252', true); // y muchos otros, de Windows
+  if (text == null) text = attempt('utf-8', false) || '';
+  return cleanText(text);
+}
+
+/** Quita controles, rellenos y espacios; devuelve '' si no queda nada legible. */
+function cleanText(text) {
+  const clean = String(text)
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\ufffd/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return '';
+  // Si más de un tercio es ilegible, no es un título: es una decodificación mala.
+  const readable = clean.replace(/[^\p{L}\p{N}\p{P}\p{Zs}]/gu, '').length;
+  if (readable < clean.length * 0.67) return '';
+  return clean;
+}
+
+/** Nombres que no dicen nada: mejor usar el del archivo. */
+const GENERIC_NAMES = /^(untitled|sin t[ií]tulo|track\s*\d*|midi(\s*file)?|song|new\s*song|piano|instrument\s*\d*|unnamed)$/i;
+
+export function usefulTitle(embedded, fallback) {
+  const clean = cleanText(embedded || '');
+  if (!clean || GENERIC_NAMES.test(clean)) return cleanText(fallback) || 'Canción importada';
+  return clean;
 }
 
 /**
@@ -226,7 +263,7 @@ export function songFromMidi(arrayBuffer, fallbackTitle = 'Canción importada') 
   const parsed = parseMidiFile(arrayBuffer);
   let notes = clean(assignHands(tracksToNotes(parsed)));
   if (!notes.length) throw new Error('El archivo no tiene notas que se puedan tocar.');
-  const title = (parsed.title || fallbackTitle).slice(0, 80);
+  const title = usefulTitle(parsed.title, fallbackTitle).slice(0, 80);
   const song = buildSong({
     title,
     composer: '',
@@ -332,7 +369,8 @@ export function songToMidiBytes(song) {
   const den = Math.round(Math.log2(song.meter[1] || 4));
   body.push(0xff, 0x58, 0x04, song.meter[0] || 4, den, 24, 8);
   pushVlq(0);
-  const name = Array.from(song.title).map((c) => c.charCodeAt(0) & 0x7f).slice(0, 60);
+  // El nombre va en UTF-8: recortarlo a ASCII se comía los acentos.
+  const name = Array.from(new TextEncoder().encode(song.title)).slice(0, 120);
   body.push(0xff, 0x03, name.length, ...name);
 
   let last = 0;

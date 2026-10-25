@@ -7,7 +7,7 @@ Anadir cancion desde archivo,anadir,must,yes,yes,MIDI exacto; audio mp3/m4a/wav/
 Anadir cancion pegando un enlace,anadir,must,yes,partial,"reconoce YouTube/Spotify/SoundCloud, lee el titulo por oEmbed publico y lleva a buscar un MIDI o a transcribir de oido; el original lo convierte en su servidor"
 Conversion automatica de audio a notas,anadir,must,yes,partial,"transcriptor propio en el navegador con tempo automatico, sin limite de peso ni de duracion, desde mp3/m4a/wav/ogg/flac o grabando lo que suena; monofonico y marcado beta"
 Notas que caen sobre el teclado,reproductor,must,yes,yes,
-Teclado en pantalla tocable,reproductor,must,yes,yes,"multitouch, y tambien con el teclado del ordenador"
+Teclado en pantalla tocable,reproductor,must,yes,yes,"proporciones de piano real, deslizable y ampliable, con seguimiento automatico; multitouch y teclado del ordenador"
 Modo espera: la cancion espera tu nota,reproductor,must,yes,yes,"ademas, si te adelantas la cancion te sigue"
 Separacion de manos izquierda y derecha,reproductor,must,yes,yes,la mano que no practicas la toca la app
 Indicacion de dedo por nota,reproductor,must,yes,yes,calculada; escrita a mano en los ejercicios
@@ -24,7 +24,7 @@ Pantalla de resultados con precision,practica,must,yes,yes,
 Estrellas por cancion,practica,should,yes,yes,
 Modo escuchar la cancion completa,practica,should,yes,yes,
 Tocar con teclado MIDI,entrada,must,yes,partial,Web MIDI donde exista; Safari en iPad no lo trae y lo dice
-Tocar con piano acustico por microfono,entrada,must,yes,partial,"deteccion por picos del espectro: bien con notas sueltas, aproximada con acordes"
+Tocar con piano acustico por microfono,entrada,must,yes,yes,"autocorrelacion en dos pasadas: 69 notas de Mi1 a Do7 exactas, tambien con ruido; una nota a la vez, no acordes"
 Racha de dias practicando,progreso,should,yes,yes,
 Indicadores de progreso por cancion,progreso,should,yes,yes,
 Minutos practicados y estadisticas,progreso,could,yes,yes,mas calendario de 35 dias
@@ -52,3 +52,8 @@ Decir cuantas teclas tiene tu piano,mejora,could,no,yes,"25 a 88 teclas, con la 
 Saltar o plegar las notas que tu piano no tiene,mejora,could,no,yes,"omitirlas o traerlas a la octava mas cercana, dicho en pantalla"
 Detectar solo el tempo de lo que grabas,mejora,could,no,yes,autocorrelacion de la envolvente de ataques
 Grabar lo que suena para transcribirlo,mejora,could,no,yes,"por microfono, o el sonido de otra pestana donde el navegador lo permita"
+Ajustar cuantas teclas se ven y deslizar el teclado,mejora,could,no,yes,"arrastrando la barra o sobre las propias notas, con seguimiento automatico"
+Ajustar cuanto se ve venir y el alto del teclado,mejora,could,no,yes,
+Paleta de manos apta para daltonismo,mejora,could,no,yes,y una de alto contraste
+Ver en pantalla la nota que oye el microfono,mejora,could,no,yes,"con la desviacion en centesimas, para comprobarlo sin fiarse"
+Renombrar una cancion importada,mejora,could,no,yes,util cuando el titulo del archivo viene en otro idioma

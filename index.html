@@ -116,6 +116,7 @@
         </div>
         <div class="song-head-actions">
           <button class="btn btn-ghost" id="song-pin" type="button">Fijar</button>
+          <button class="btn btn-ghost" id="song-rename" type="button" hidden>Renombrar</button>
           <button class="btn btn-ghost" id="song-export" type="button">Exportar MIDI</button>
           <button class="btn btn-ghost danger" id="song-delete" type="button" hidden>Borrar</button>
         </div>
@@ -270,6 +271,37 @@
       </div>
 
       <div class="panel">
+        <h3>Notas que caen</h3>
+        <div class="field">
+          <label class="label" for="set-lookahead">Cuánto se ve venir <output id="set-lookahead-out">2,6 s</output></label>
+          <input type="range" id="set-lookahead" min="12" max="55" step="1" value="26">
+          <p class="hint">Más segundos: las notas bajan despacio y ves más por delante. Menos: bajan rápido y se leen más grandes.</p>
+        </div>
+        <div class="field">
+          <label class="label" for="set-keys-visible">Teclas a la vista <output id="set-keys-visible-out">todas las que haga falta</output></label>
+          <input type="range" id="set-keys-visible" min="0" max="40" step="1" value="0">
+          <p class="hint">Menos teclas = teclas más grandes. Si no caben todas, el teclado se desliza: arrastra la barra de debajo de las notas, o arrastra sobre las propias notas.</p>
+        </div>
+        <div class="field">
+          <label class="label" for="set-kb-height">Alto del teclado <output id="set-kb-height-out">34 %</output></label>
+          <input type="range" id="set-kb-height" min="20" max="50" step="1" value="34">
+        </div>
+        <div class="field">
+          <span class="label">Colores de las manos</span>
+          <div class="segmented" id="set-palette" role="radiogroup" aria-label="Colores de las manos"></div>
+        </div>
+        <div class="field row">
+          <label class="switch"><input type="checkbox" id="set-autofollow" checked> <span>El teclado sigue a la canción</span></label>
+        </div>
+        <div class="field row">
+          <label class="switch"><input type="checkbox" id="set-grid" checked> <span>Líneas y números de compás</span></label>
+        </div>
+        <div class="field row">
+          <label class="switch"><input type="checkbox" id="set-glow" checked> <span>Brillo sobre la línea de ataque</span></label>
+        </div>
+      </div>
+
+      <div class="panel">
         <h3>Tu piano</h3>
         <div class="field">
           <span class="label">Cuántas teclas tiene</span>
@@ -313,8 +345,16 @@
             <button type="button" role="radio" aria-checked="false" data-input="midi">Teclado MIDI</button>
           </div>
           <p class="hint" id="input-status">Toca las teclas en la pantalla.</p>
-          <div class="level" id="mic-level" hidden><div class="level-fill" id="mic-level-fill"></div></div>
-          <button class="btn btn-ghost" id="input-test" type="button" hidden>Probar</button>
+        </div>
+        <div class="field" id="mic-panel" hidden>
+          <div class="heard" id="mic-heard">
+            <b id="mic-note">—</b>
+            <span id="mic-cents">toca una nota en tu piano</span>
+          </div>
+          <div class="level"><div class="level-fill" id="mic-level-fill"></div></div>
+          <label class="label" for="set-mic-sensitivity">Sensibilidad <output id="set-mic-sensitivity-out">media</output></label>
+          <input type="range" id="set-mic-sensitivity" min="0" max="100" step="5" value="50">
+          <p class="hint">Si no te oye, súbela. Si salta sola con el ruido de la sala, bájala. Oye <b>una nota a la vez</b>, de Mi1 a Do7; para acordes todavía no da.</p>
         </div>
       </div>
 

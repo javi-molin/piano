@@ -1,13 +1,13 @@
-## Parity: 90.1 / 100
+## Parity: 92.0 / 100
 
-features 90.1  (33 counted, must-haves 14 of 18 done)
+features 92.0  (33 counted, must-haves 15 of 18 done)
 
-Not shippable yet: 4 must-have features are not done.
+Not shippable yet: 3 must-have features are not done.
 
 ## By area, weakest first
-- entrada                       50.0  (2 features)
 - anadir                        66.7  (3 features)
 - ajustes                       66.7  (2 features)
+- entrada                       75.0  (2 features)
 - progreso                      83.3  (4 features)
 - biblioteca                   100.0  (3 features)
 - catalogo                     100.0  (1 features)
@@ -18,8 +18,7 @@ Not shippable yet: 4 must-have features are not done.
 
 ## Missing, in build order
 - [must] anadir: Anadir cancion pegando un enlace, partial  (reconoce YouTube/Spotify/SoundCloud, lee el titulo por oEmbed publico y lleva a buscar un MIDI o a transcribir de oido; el original lo convierte en su servidor)
-- [must] anadir: Conversion automatica de audio a notas, partial  (transcriptor propio en el navegador con tempo automatico, desde archivo o grabando lo que suena; monofonico y marcado beta)
-- [must] entrada: Tocar con piano acustico por microfono, partial  (deteccion por picos del espectro: bien con notas sueltas, aproximada con acordes)
+- [must] anadir: Conversion automatica de audio a notas, partial  (transcriptor propio en el navegador con tempo automatico, sin limite de peso ni de duracion, desde mp3/m4a/wav/ogg/flac o grabando lo que suena; monofonico y marcado beta)
 - [must] entrada: Tocar con teclado MIDI, partial  (Web MIDI donde exista; Safari en iPad no lo trae y lo dice)
 - [could] ajustes: Varios idiomas, no  (solo espanol)
 - [could] progreso: Recordatorio de racha, no  (haria falta notificaciones; en iOS una PWA no las da sin mas)
@@ -47,3 +46,8 @@ Not shippable yet: 4 must-have features are not done.
 - Saltar o plegar las notas que tu piano no tiene
 - Detectar solo el tempo de lo que grabas
 - Grabar lo que suena para transcribirlo
+- Ajustar cuantas teclas se ven y deslizar el teclado
+- Ajustar cuanto se ve venir y el alto del teclado
+- Paleta de manos apta para daltonismo
+- Ver en pantalla la nota que oye el microfono
+- Renombrar una cancion importada

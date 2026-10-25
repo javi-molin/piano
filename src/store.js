@@ -31,6 +31,15 @@ export const DEFAULT_SETTINGS = {
   pianoKeys: 0,        // 0 = sin límite; si no, 25/37/49/61/76/88
   pianoLowShift: 0,    // octavas que se mueve la nota más grave del teclado
   outOfRange: 'fold',  // show | skip | fold, para lo que no entra en tu piano
+  // La zona donde caen las notas
+  keysVisible: 0,          // blancas a la vista; 0 = las que haga falta
+  keyboardHeight: 34,      // % de la altura de la pantalla
+  lookAheadSeconds: 2.6,   // cuánto se ve venir
+  autoFollow: true,        // el teclado sigue a la canción al deslizarse
+  showGrid: true,          // líneas y números de compás
+  showGlow: true,          // brillo sobre la línea de ataque
+  palette: 'clasica',      // clasica | daltonismo | contraste
+  micSensitivity: 50,      // 0 sala ruidosa, 100 muy sensible
 };
 
 let dbPromise = null;
