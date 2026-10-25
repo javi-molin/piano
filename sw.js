@@ -4,7 +4,11 @@
 // estrategia es "del caché primero" y la red solo sirve para traer una versión
 // nueva en segundo plano.
 
-const VERSION = 'cascada-v1';
+// El despliegue sella aquí el commit publicado (.github/workflows/pages.yml).
+// En local se queda en 'dev', que es lo que se quiere mientras se desarrolla.
+// Si esta línea cambia de forma, el despliegue falla en vez de servir callado
+// una copia vieja: lo vigila tests/deploy.test.mjs.
+const VERSION = 'cascada-dev';
 const SHELL = [
   './',
   'index.html',
@@ -21,6 +25,7 @@ const SHELL = [
   'src/audio.js',
   'src/midi.js',
   'src/mic.js',
+  'src/pitch.js',
   'src/transcribe.js',
   'src/keyboard.js',
   'src/roll.js',

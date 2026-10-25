@@ -20,7 +20,8 @@ El repositorio ya trae el flujo de GitHub Pages. Solo hay que encenderlo:
 
 1. En GitHub, ve a **Settings → Pages**.
 2. En **Source**, elige **GitHub Actions**.
-3. Fusiona esta rama a `main`. El flujo corre las pruebas (también en cada pull request) y publica desde `main`.
+3. Listo. **Todo lo que llega a `main` se publica solo**: el flujo corre las tres suites y,
+   solo si pasan, despliega. Si algo falla, la versión viva se queda como estaba.
 
 Queda en `https://javi-molin.github.io/piano/`.
 
@@ -143,7 +144,7 @@ python3 -m http.server 8080     # o: npm start
 ```
 
 ```bash
-npm test          # 59 pruebas del núcleo + los tokens de diseño (solo Node)
+npm test          # 59 del núcleo + tokens de diseño + despliegue (solo Node)
 npm run test:e2e  # 37 recorridos en Chromium (necesita playwright)
 npm run icons     # regenera los iconos desde los tokens
 ```

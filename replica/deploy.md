@@ -4,9 +4,10 @@
 
 | comprobación | comando | estado |
 | --- | --- | --- |
-| Pruebas del núcleo | `node tests/engine.test.mjs` | 30 bien |
-| Tokens de diseño sin deriva | `node tests/tokens.test.mjs` | 18 alineados, cero hex sueltos |
-| Pruebas de navegador | `node tests/e2e.mjs` | 15 bien |
+| Pruebas del núcleo | `node tests/engine.test.mjs` | 59 bien |
+| Tokens de diseño sin deriva | `node tests/tokens.test.mjs` | 22 alineados, cero hex sueltos |
+| El despliegue puede sellar la versión | `node tests/deploy.test.mjs` | bien |
+| Pruebas de navegador | `node tests/e2e.mjs` | 37 bien |
 | Contraste WCAG | `npm run contrast` | 14 pares, 0 fallando AA |
 | Paridad | `npm run parity` | 90,1 / 100 |
 | Nada del original en el código | `npm run sweep` | limpio |
@@ -39,8 +40,14 @@ Sitio estático. No hay servidor, base de datos, claves ni variables de entorno.
 
 ### Al publicar una versión nueva
 
-Sube `VERSION` en `sw.js` (`cascada-v1` → `cascada-v2`). Si no, los iPads ya instalados
-seguirán sirviendo la copia vieja del caché hasta que la red les traiga otra cosa.
+Nada que hacer a mano. **Todo lo que llega a `main` se publica solo**, y el despliegue sella
+el nombre del caché del service worker con el commit publicado. Antes ese número se subía a
+mano y era cuestión de tiempo que a alguien se le olvidara: un iPad ya instalado se habría
+quedado con la copia vieja para siempre. Si el sellado no se pudiera aplicar, el despliegue
+**falla** en vez de publicar algo que nadie va a actualizar.
+
+`tests/deploy.test.mjs` vigila que la línea que se sella siga existiendo, que publicar
+dependa de las pruebas, y que el service worker guarde todos los módulos de `src/`.
 
 ## Vuelta atrás
 
